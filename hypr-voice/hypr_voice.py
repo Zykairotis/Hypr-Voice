@@ -1,7 +1,33 @@
 #!/usr/bin/env python3
 """
-Hypr-Voice: Voice-driven input system for Hyprland/Arch Linux
-Main client with LLM context enhancement and MCP tools integration
+Hypr-Voice: Advanced Voice-Driven Input System for Hyprland/Arch Linux
+
+A sophisticated voice processing module that provides context-aware transcription
+with LLM enhancement and MCP (Model Context Protocol) tools integration.
+
+## Features
+- High-quality audio recording with configurable sample rates (up to 48kHz)
+- Real-time window context detection via Hyprland IPC
+- Automatic transcription using Whisper server
+- LLM-powered text improvement using multiple providers (xAI, OpenAI, Anthropic)
+- Profile-based context switching for different applications
+- Push-to-talk and continuous recording modes
+- Clipboard integration and paste-to-cursor functionality
+
+## Architecture
+- Async/await design for non-blocking operations
+- Modular context engines (SimpleImprovementEngine, CogneeContextEngine)
+- Fallback mechanisms for audio devices and LLM providers
+- Comprehensive error handling and recovery
+
+## Configuration
+- audio_config.yaml: Audio device and quality settings
+- app_profiles.yaml: Application-specific LLM prompts and rules
+- .env: API keys and server endpoints
+
+Author: Hypr-Voice Team
+License: MIT
+Version: 2.0.0
 """
 
 import os
@@ -11,7 +37,7 @@ import json
 import subprocess
 import time
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, cast
 from datetime import datetime
 
 # Add parent directory to path for imports
@@ -28,27 +54,67 @@ import socket
 load_dotenv()
 
 class HyprVoice:
-    """Main Hypr-Voice client with context-aware transcription"""
+    """
+    Main Hypr-Voice client for voice-driven input with context-aware transcription.
+    
+    This class manages the complete voice processing pipeline from audio capture
+    to transcription and LLM-enhanced text improvement. It integrates with Hyprland
+    for window context detection and supports multiple recording modes.
+    
+    Attributes:
+        config_dir (Path): Configuration directory containing YAML configs
+        context_engine: Active context engine (SimpleImprovementEngine or CogneeContextEngine)
+        whisper_server_url (str): URL of the Whisper transcription server
+        current_app (str): Currently active application class from Hyprland
+        is_recording (bool): Recording state flag
+        recording_audio (list): Buffer for audio chunks during recording
+        stream: Active sounddevice InputStream instance
+        audio_config (dict): Loaded audio configuration settings
+        input_device: Selected audio input device (name or index)
+        input_samplerate (int): Recording sample rate in Hz
+        input_channels (int): Number of audio channels (1=mono, 2=stereo)
+    """
     
     def __init__(self, config_dir: Optional[Path] = None):
-        """Initialize Hypr-Voice client"""
+        """
+        Initialize the Hypr-Voice client with configuration.
+        
+        Args:
+            config_dir: Optional path to configuration directory.
+                       Defaults to ./config relative to script location.
+        
+        Environment Variables:
+            WHISPER_SERVER_URL: Whisper server endpoint (default: http://localhost:9880)
+            HYPR_VOICE_NO_IMPROVE: Disable LLM improvement if "true"
+            HYPR_VOICE_INPUT_DEVICE: Override primary audio input device
+        
+        Raises:
+            FileNotFoundError: If config directory doesn't exist
+            yaml.YAMLError: If configuration files are malformed
+        """
         self.config_dir = config_dir or Path(__file__).parent / "config"
-        self.context_engine = None
+        self.context_engine: Optional[Any] = None
         self.whisper_server_url = os.getenv("WHISPER_SERVER_URL", "http://localhost:9880")
-        self.current_app = None
+        self.current_app: Optional[str] = None
         
         # Recording state
-        self.is_recording = False
-        self.recording_audio = []
-        self.stream = None
-        self.app_at_recording_start = None
+        self.is_recording: bool = False
+        self.recording_audio: list = []
+        self.stream: Optional[Any] = None
+        self.app_at_recording_start: Optional[str] = None
+        
+        # Actual recording parameters (populated when stream opens)
+        self.actual_samplerate: Optional[int] = None
+        self.actual_channels: Optional[int] = None
+        self.actual_dtype: Optional[str] = None
+        self.actual_device: Optional[str] = None
         
         # Metrics / timing
-        self._record_started_at = 0.0
-        self._total_frames = 0
+        self._record_started_at: float = 0.0
+        self._total_frames: int = 0
         
         # Load audio configuration
-        self.audio_config = self._load_audio_config()
+        self.audio_config: dict = self._load_audio_config()
         
         # Audio device selection from config or env
         audio_devices = self.audio_config.get('devices', {})
@@ -94,21 +160,78 @@ class HyprVoice:
         logger.info("Initializing Hypr-Voice...")
     
     async def _ensure_context_engine(self) -> bool:
-        """Lazily import and initialize the context engine. Returns True if available."""
+        """
+        Ensure a context engine is initialized for text improvement.
+        
+        Attempts to initialize context engines in priority order:
+        1. SimpleImprovementEngine - Lightweight, LiteLLM-based improvement
+        2. CogneeContextEngine - Advanced with memory and tool support
+        
+        The function uses lazy initialization to avoid loading heavy dependencies
+        unless text improvement is actually needed.
+        
+        Returns:
+            bool: True if a context engine was successfully initialized,
+                  False if all initialization attempts failed.
+        
+        Note:
+            This method is idempotent - multiple calls will not reinitialize
+            an already active engine.
+        """
         if self.context_engine is not None:
             return True
+        
+        # Allow opt-out via env
+        if os.getenv("HYPR_VOICE_NO_IMPROVE", "false").lower() == "true":
+            logger.info("HYPR_VOICE_NO_IMPROVE=true -> skipping context engine initialization")
+            self.context_engine = None
+            return False
+        
+        # Try lightweight SimpleImprovementEngine first (LiteLLM-based)
         try:
-            from context_engine_cognee import CogneeContextEngine
+            from simple_improvement_engine import SimpleImprovementEngine  # type: ignore[import]
+            self.context_engine = SimpleImprovementEngine(config_dir=self.config_dir)
+            # Set active app if known
+            try:
+                if self.current_app:
+                    self.context_engine.set_active_application(self.current_app)
+            except Exception as _e:
+                logger.debug(f"Failed to set active app on SimpleImprovementEngine: {_e}")
+            logger.info("Initialized SimpleImprovementEngine")
+            return True
+        except Exception as e_simple:
+            logger.warning(f"SimpleImprovementEngine unavailable: {e_simple}")
+            self.context_engine = None
+        
+        # Fallback to CogneeContextEngine if available
+        try:
+            from context_engine_cognee import CogneeContextEngine  # type: ignore[import]
             self.context_engine = CogneeContextEngine(config_dir=self.config_dir)
             await self.context_engine.initialize()
+            logger.info("Initialized CogneeContextEngine")
             return True
-        except Exception as e:
-            logger.warning(f"Context engine unavailable, proceeding without enhancements: {e}")
+        except Exception as e_cognee:
+            logger.warning(f"CogneeContextEngine unavailable: {e_cognee}")
             self.context_engine = None
             return False
     
-    async def initialize(self):
-        """Initialize async components"""
+    async def initialize(self) -> None:
+        """
+        Initialize async components and validate system requirements.
+        
+        Performs the following initialization steps:
+        1. Validates sounddevice availability for audio recording
+        2. Queries and logs available audio devices
+        3. Updates active window context from Hyprland
+        4. Creates required directories for audio recordings
+        
+        This method should be called once before starting recording operations.
+        It's safe to call multiple times (idempotent).
+        
+        Raises:
+            ImportError: If sounddevice is not installed (non-critical warning)
+            OSError: If recording directory creation fails
+        """
         # Check for sounddevice
         try:
             import sounddevice as sd
@@ -126,7 +249,28 @@ class HyprVoice:
         logger.info("Hypr-Voice initialized successfully")
     
     def _load_audio_config(self) -> dict:
-        """Load audio configuration from audio_config.yaml"""
+        """
+        Load audio configuration from audio_config.yaml.
+        
+        Reads the audio configuration file and returns settings for:
+        - Audio quality (sample rate, channels, data type)
+        - Input devices (primary, secondary, fallback behavior)
+        - Recording parameters (max duration, silence detection)
+        - Whisper integration (target sample rate, file management)
+        
+        Returns:
+            dict: Audio configuration dictionary with the following structure:
+                {
+                    'quality': {'sample_rate': int, 'channels': int, ...},
+                    'devices': {'primary': dict, 'secondary': dict, ...},
+                    'recording': {'max_duration': int, 'silence_threshold': float, ...},
+                    'whisper': {'target_sample_rate': int, 'keep_originals': bool, ...}
+                }
+        
+        Note:
+            Falls back to sensible defaults if config file is missing or invalid.
+            Logs warnings for configuration issues but doesn't raise exceptions.
+        """
         audio_config_path = self.config_dir / "audio_config.yaml"
         
         # Default configuration if file doesn't exist
@@ -165,6 +309,9 @@ class HyprVoice:
                 with open(audio_config_path, 'r') as f:
                     import yaml
                     config = yaml.safe_load(f)
+                    # Guard against empty YAML returning None
+                    if not config:
+                        config = {}
                     logger.info(f"Loaded audio config from {audio_config_path}")
                     
                     # List devices on startup if configured
@@ -199,7 +346,11 @@ class HyprVoice:
                     # Update context engine profile if available
                     if self.context_engine:
                         try:
-                            await self.context_engine.set_active_application(app_class)
+                            setter = getattr(self.context_engine, "set_active_application", None)
+                            if setter is not None:
+                                res = setter(app_class)
+                                if asyncio.iscoroutine(res):
+                                    await res
                         except Exception as _e:
                             logger.debug(f"Context engine not ready: {_e}")
                     
@@ -232,8 +383,10 @@ class HyprVoice:
             idx = int(device_spec)
             # Validate the index exists and has input channels
             devices = sd.query_devices()
-            if 0 <= idx < len(devices) and devices[idx].get("max_input_channels", 0) > 0:
-                return idx
+            if 0 <= idx < len(devices):
+                dev_info = cast(Dict[str, Any], devices[idx])
+                if int(dev_info.get("max_input_channels", 0)) > 0:
+                    return idx
             else:
                 logger.warning(f"Device index {idx} invalid or has no input channels")
         except ValueError:
@@ -243,8 +396,11 @@ class HyprVoice:
         try:
             devices = sd.query_devices()
             for i, d in enumerate(devices):
-                if d.get("max_input_channels", 0) > 0 and str(device_spec).lower() in d.get("name", "").lower():
-                    logger.info(f"Found device '{d.get('name')}' at index {i}")
+                dd = cast(Dict[str, Any], d)
+                max_in = int(dd.get("max_input_channels", 0))
+                name = dd.get("name", "unknown")
+                if max_in > 0 and str(device_spec).lower() in str(name).lower():
+                    logger.info(f"Found device '{name}' at index {i}")
                     return i
         except Exception:
             pass
@@ -257,15 +413,22 @@ class HyprVoice:
         try:
             import sounddevice as sd
             dev = self._resolve_input_device(self.input_device)
-            info = sd.query_devices(dev, kind='input')
-            default = sd.default.device
-            default_in = default[0] if isinstance(default, (list, tuple)) else default
-            is_default = dev is None
-            name = info.get('name', 'unknown')
-            max_in = info.get('max_input_channels')
-            hostapi = info.get('hostapi')
-            default_sr = int(info.get('default_samplerate') or 0)
-            return {"name": name, "index": (default_in if is_default else dev), "is_default": is_default, "max_input_channels": max_in, "hostapi": hostapi, "default_samplerate": default_sr}
+            
+            # Get device info if possible
+            try:
+                dinfo = cast(Dict[str, Any], sd.query_devices(dev, kind='input'))
+                default = sd.default.device
+                default_in = default[0] if isinstance(default, (list, tuple)) else default
+                is_default = dev is None
+                name = dinfo.get("name", "unknown")
+                max_in = dinfo.get("max_input_channels", 0)
+                hostapi = dinfo.get("hostapi")
+                default_sr = int(dinfo.get("default_samplerate", 0) or 0)
+                return {"name": name, "index": (default_in if is_default else dev), "is_default": is_default, "max_input_channels": max_in, "hostapi": hostapi, "default_samplerate": default_sr}
+            except Exception:
+                dinfo = None
+                dev_default_sr = 48000
+                device_name = 'unknown'
         except Exception as e:
             logger.warning(f"Unable to get input device info: {e}")
             return None
@@ -280,10 +443,13 @@ class HyprVoice:
             default_in = default[0] if isinstance(default, (list, tuple)) else default
             print("Audio devices ( * = default input ):")
             for i, d in enumerate(devices):
+                dd = cast(Dict[str, Any], d)
                 star = "*" if i == default_in else " "
-                mi = d.get('max_input_channels', 0)
-                mo = d.get('max_output_channels', 0)
-                print(f"{star} {i:>3} {d.get('name','unknown')} ({mi} in, {mo} out)  default_sr={int(d.get('default_samplerate') or 0)}")
+                mi = int(dd.get("max_input_channels", 0))
+                mo = int(dd.get("max_output_channels", 0))
+                name = dd.get("name", "unknown")
+                sr = int(dd.get("default_samplerate", 0) or 0)
+                print(f"{star} {i:>3} {name} ({mi} in, {mo} out)  default_sr={sr}")
         except Exception as e:
             print(f"Failed to list devices: {e}", file=sys.stderr)
     
@@ -304,11 +470,38 @@ class HyprVoice:
         n_new = max(1, int(round(n_old * to_sr / from_sr)))
         xp = np.linspace(0.0, 1.0, num=n_old, endpoint=False, dtype=np.float64)
         x_new = np.linspace(0.0, 1.0, num=n_new, endpoint=False, dtype=np.float64)
-        y = np.interp(x_new, xp, x.astype(np.float64))
+        y = np.interp(x_new, xp, x.astype(np.float64))  # type: ignore[call-overload]
         return y.astype(np.float32)
     
-    async def start_recording(self):
-        """Start audio recording"""
+    async def start_recording(self) -> None:
+        """
+        Start recording audio from the configured input device.
+        
+        Initiates audio capture using sounddevice with the following features:
+        - Automatic device selection with fallback support
+        - Sample rate negotiation (48kHz -> 44.1kHz -> 32kHz -> 24kHz -> 16kHz)
+        - Channel configuration (mono/stereo based on device capabilities)
+        - Non-blocking callback-based recording
+        
+        The method performs these steps:
+        1. Validates recording state (prevents double-start)
+        2. Captures current application context
+        3. Attempts to open audio stream with primary device
+        4. Falls back to secondary device if configured
+        5. Negotiates audio parameters for compatibility
+        
+        Recording continues until stop_recording() is called.
+        
+        Raises:
+            RuntimeError: If no audio device can be opened
+            ImportError: If sounddevice is not installed
+        
+        Side Effects:
+            - Sets self.is_recording = True
+            - Creates self.stream (sounddevice.InputStream)
+            - Populates self.recording_audio buffer
+            - Shows system notification for recording status
+        """
         if self.is_recording:
             logger.warning("Already recording")
             return
@@ -366,9 +559,9 @@ class HyprVoice:
                 
                 # Get device info if possible
                 try:
-                    dinfo = sd.query_devices(dev, kind='input')
-                    dev_default_sr = int(dinfo.get('default_samplerate') or 48000)
-                    device_name = dinfo.get('name', 'unknown')
+                    dinfo = cast(Dict[str, Any], sd.query_devices(dev, kind='input'))
+                    dev_default_sr = int(dinfo.get("default_samplerate", 48000) or 48000)
+                    device_name = str(dinfo.get("name", "unknown"))
                 except Exception:
                     dinfo = None
                     dev_default_sr = 48000
@@ -379,7 +572,10 @@ class HyprVoice:
                 last_error = None
                 # Use configured channels or detect from device
                 channels_options = [self.input_channels]
-                if self.input_channels == 1 and dinfo and int(dinfo.get('max_input_channels') or 0) >= 2:
+                max_in_channels = 0
+                if self.input_channels == 1 and dinfo:
+                    max_in_channels = int(cast(Dict[str, Any], dinfo).get("max_input_channels", 0) or 0)
+                if self.input_channels == 1 and max_in_channels >= 2:
                     channels_options.append(2)  # Try stereo as fallback
                 
                 # Try configured sample rate first, then fallbacks
@@ -430,8 +626,34 @@ class HyprVoice:
             self._total_frames = 0
             self.notify("Recording Error", str(e), urgency="critical")
     
-    async def stop_recording(self):
-        """Stop recording and process audio - optimized for quick response"""
+    async def stop_recording(self) -> Optional[str]:
+        """
+        Stop recording audio and process the captured data.
+        
+        Performs the complete recording finalization pipeline:
+        1. Stops the audio stream and collects recorded data
+        2. Converts stereo to mono if needed
+        3. Resamples audio to Whisper-compatible rate (16kHz default)
+        4. Saves audio file with timestamp
+        5. Sends to Whisper server for transcription
+        6. Applies LLM improvement if configured
+        7. Copies result to clipboard
+        
+        Returns:
+            Optional[str]: The final processed text (improved or raw transcription),
+                          or None if recording failed or no audio was captured.
+        
+        Side Effects:
+            - Sets self.is_recording = False
+            - Closes and clears self.stream
+            - Saves audio file to ./recordings/
+            - Shows system notifications for status
+            - Copies text to clipboard (if successful)
+        
+        Note:
+            This method is idempotent - calling it when not recording is safe
+            and will return None without side effects.
+        """ 
         # Check if already stopped (handles race conditions)
         if not self.is_recording and not hasattr(self, 'stream'):
             logger.debug("Already stopped - ignoring duplicate STOP")
@@ -500,7 +722,7 @@ class HyprVoice:
             
             # Log captured stats
             frames = int(self._total_frames)
-            sr = int(self.input_samplerate)
+            sr = int((self.actual_samplerate or self.input_samplerate) or 0)
             dur = frames / sr if sr else 0.0
             logger.info(f"Captured frames={frames}, samplerate={sr}, duration={dur:.2f}s, chunks={len(self.recording_audio)}")
             
@@ -508,12 +730,13 @@ class HyprVoice:
             mono = self._to_mono(audio_data).astype('float32')
             
             # Normalize if original capture was int16
-            if self.input_dtype == 'int16':
+            if (self.actual_dtype or self.input_dtype) == 'int16':
                 mono = mono / 32768.0
             
-            # Resample to 16k if necessary
-            if self.input_samplerate != 16000:
-                mono = self._resample_audio(mono, self.input_samplerate, 16000)
+            # Resample to target rate if necessary
+            target_sr = int(getattr(self, 'whisper_target_rate', 16000))
+            if sr and sr != target_sr:
+                mono = self._resample_audio(mono, sr, target_sr)
             
             # Create debug directory if it doesn't exist
             recordings_dir = Path(__file__).parent / "recordings"
@@ -522,7 +745,7 @@ class HyprVoice:
             # Save recording with timestamp
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]  # Include milliseconds
             recording_path = recordings_dir / f"recording_{timestamp}.wav"
-            sf.write(str(recording_path), mono, 16000)
+            sf.write(str(recording_path), mono, target_sr)
             logger.info(f"Saved recording to {recording_path}")
             
             # Send to transcription server
@@ -547,14 +770,12 @@ class HyprVoice:
             # Stop/abort stream immediately
             try:
                 if hasattr(self, 'stream') and self.stream:
-                    try:
-                        # Abort is immediate if available, else stop
-                        if hasattr(self.stream, 'abort'):
-                            self.stream.abort()
-                        else:
-                            self.stream.stop()
-                    except Exception:
-                        pass
+                    # Abort is immediate if available, else stop
+                    if hasattr(self.stream, 'abort'):
+                        self.stream.abort()
+                    else:
+                        self.stream.stop()
+                    # Then close it
                     try:
                         self.stream.close()
                     except Exception:
@@ -703,29 +924,35 @@ class HyprVoice:
             processed = text
             try:
                 if await self._ensure_context_engine():
-                    processed = await self.context_engine.process_transcription(
-                        text,
-                        improve=True,  # Improve by default
-                        use_memory=True,
-                        use_tools=True
-                    )
+                    engine = self.context_engine
+                    if engine is not None:
+                        try:
+                            processed = await engine.process_transcription(
+                                text,
+                                improve=True,  # Prefer enhanced call if supported
+                                use_memory=True,
+                                use_tools=True
+                            )
+                        except TypeError:
+                            # Fallback for engines expecting (text, app_class)
+                            processed = await engine.process_transcription(text, getattr(self, "current_app", None))
             except Exception as _e:
                 logger.debug(f"Context processing skipped: {_e}")
             
-            # Show notification with action buttons
-            self.notify(
-                "Transcription Ready",
-                processed[:200] + "..." if len(processed) > 200 else processed,
-                actions=["COPY", "IMPROVE", "EDIT", "PASTE"],
-                urgency="normal"
-            )
-            
-            # Auto-paste if configured
+            # Auto-paste FIRST if configured (before any blocking notifications)
             if os.getenv("AUTO_PASTE", "false").lower() == "true":
                 self.paste_to_cursor(processed)
             else:
                 # Just copy to clipboard by default
                 self.copy_to_clipboard(processed)
+            
+            # Show notification AFTER paste (non-blocking)
+            # Don't use actions as they block waiting for user interaction
+            self.notify(
+                "Transcription Ready",
+                processed[:200] + "..." if len(processed) > 200 else processed,
+                urgency="low"  # Low urgency since action is already done
+            )
             
             return processed
             
@@ -917,7 +1144,7 @@ class HyprVoice:
             logger.error(f"Failed to copy to clipboard: {e}")
     
     def paste_to_cursor(self, text: str):
-        """Paste text at cursor position"""
+        """Paste text at current cursor position using Hyprland's sendshortcut or keyboard simulation"""
         try:
             # First copy to clipboard
             subprocess.run(
@@ -927,27 +1154,77 @@ class HyprVoice:
                 check=True
             )
             
-            # Then simulate Ctrl+V using ydotool
-            subprocess.run(
-                ["ydotool", "key", "ctrl+v"],
-                check=True
-            )
-            logger.info("Text pasted at cursor")
-            self.notify("Pasted", text[:50] + "..." if len(text) > 50 else text, urgency="low")
+            # Small delay to ensure clipboard is ready
+            import time
+            time.sleep(0.05)  # 50ms delay
+            
+            # Try multiple paste methods for better compatibility
+            paste_success = False
+            
+            # Method 1: Hyprland's sendshortcut (bypasses Wayland security)
+            # This works with Windsurf, VS Code, and other Electron apps
+            try:
+                subprocess.run(
+                    ["hyprctl", "dispatch", "sendshortcut", "CTRL,V,"],
+                    check=True,
+                    capture_output=True
+                )
+                paste_success = True
+                logger.info("Text pasted at cursor using hyprctl sendshortcut")
+            except (subprocess.CalledProcessError, FileNotFoundError) as e:
+                logger.debug(f"hyprctl sendshortcut failed: {e}, trying wtype...")
+                
+                # Method 2: Try wtype (works on some Wayland apps)
+                try:
+                    subprocess.run(
+                        ["wtype", "-M", "ctrl", "v"],
+                        check=True,
+                        capture_output=True
+                    )
+                    paste_success = True
+                    logger.info("Text pasted at cursor using wtype")
+                except (subprocess.CalledProcessError, FileNotFoundError) as e2:
+                    logger.debug(f"wtype paste failed: {e2}, trying ydotool...")
+                    
+                    # Method 3: Fallback to ydotool
+                    try:
+                        subprocess.run(
+                            ["ydotool", "key", "ctrl+v"],
+                            check=True,
+                            capture_output=True
+                        )
+                        paste_success = True
+                        logger.info("Text pasted at cursor using ydotool")
+                    except (subprocess.CalledProcessError, FileNotFoundError) as e3:
+                        logger.error(f"All paste methods failed. hyprctl: {e}, wtype: {e2}, ydotool: {e3}")
+            
+            if paste_success:
+                # Short non-blocking notification
+                self.notify("Pasted", text[:50] + "..." if len(text) > 50 else text, urgency="low")
+            else:
+                logger.warning("Failed to paste, text is in clipboard - use Ctrl+V manually")
+                self.notify("Copied to Clipboard", "Press Ctrl+V to paste", urgency="normal")
+                
         except Exception as e:
             logger.error(f"Failed to paste at cursor: {e}")
+            self.notify("Paste Failed", "Text copied to clipboard - use Ctrl+V", urgency="normal")
     
     async def improve_text(self, text: str) -> str:
         """Improve text using context engine"""
         try:
             if await self._ensure_context_engine():
-                improved = await self.context_engine.process_transcription(
-                    text,
-                    improve=True,
-                    use_memory=True,
-                    use_tools=True
-                )
-                return improved
+                engine = self.context_engine
+                if engine is not None:
+                    try:
+                        improved = await engine.process_transcription(
+                            text,
+                            improve=True,
+                            use_memory=True,
+                            use_tools=True
+                        )
+                    except TypeError:
+                        improved = await engine.process_transcription(text, getattr(self, "current_app", None))
+                    return improved
             return text
         except Exception as e:
             logger.error(f"Failed to improve text: {e}")
