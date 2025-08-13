@@ -1,0 +1,104 @@
+# Global MCP Tools Configuration
+# These tools are available to all application profiles unless explicitly excluded
+
+perplexity_search:
+  description: "Search the web using Perplexity AI for comprehensive information"
+  server: "perplexity-mcp"
+  transport: "stdio"
+  parameters:
+    query:
+      type: string
+      description: "Search query"
+      required: true
+    sources:
+      type: string
+      description: "Comma-separated data sources (web, scholar, social, edgar)"
+      default: "web"
+    model:
+      type: string
+      description: "AI model to use"
+      default: "pro-claude37sonnetthinking"
+
+exa_search:
+  description: "Semantic search using Exa AI for finding similar content"
+  server: "exa-mcp"
+  transport: "stdio"
+  parameters:
+    query:
+      type: string
+      description: "Search query"
+      required: true
+    num_results:
+      type: integer
+      description: "Number of results"
+      default: 10
+
+firecrawl_scrape:
+  description: "Extract content from web pages"
+  server: "firecrawl-mcp"
+  transport: "stdio"
+  parameters:
+    url:
+      type: string
+      description: "URL to scrape"
+      required: true
+    formats:
+      type: array
+      description: "Output formats"
+      default: ["markdown"]
+
+sourcegraph_search:
+  description: "Search code repositories and documentation"
+  server: "sourcegraph-mcp"
+  transport: "stdio"
+  parameters:
+    query:
+      type: string
+      description: "Code search query"
+      required: true
+    repo:
+      type: string
+      description: "Repository filter"
+
+swagger_parse:
+  description: "Parse and generate API clients from OpenAPI specs"
+  server: "swagger-mcp"
+  transport: "stdio"
+  parameters:
+    url:
+      type: string
+      description: "Swagger/OpenAPI document URL"
+      required: true
+    includeDetails:
+      type: boolean
+      description: "Include detailed information"
+      default: true
+
+context7_docs:
+  description: "Retrieve library documentation"
+  server: "context7-mcp"
+  transport: "stdio"
+  parameters:
+    libraryName:
+      type: string
+      description: "Library name to search"
+      required: true
+    tokens:
+      type: integer
+      description: "Maximum tokens to retrieve"
+      default: 10000
+
+toolbox_search:
+  description: "Search for MCP servers in the Smithery registry"
+  server: "toolbox-mcp"
+  transport: "stdio"
+  parameters:
+    query:
+      type: string
+      description: "Search query for MCP servers"
+      required: true
+    n:
+      type: integer
+      description: "Number of results"
+      default: 3
+

@@ -1,0 +1,277 @@
+# Application Profiles for Hypr-Voice
+# Each profile defines context-aware behavior for different applications
+
+terminal:
+  app_class: kitty
+  writing_style: technical
+  context_rules:
+    - Preserve command syntax exactly
+    - Use common shell abbreviations
+    - Don't add unnecessary punctuation
+    - Maintain technical accuracy
+  abbreviations:
+    dir: directory
+    repo: repository
+    config: configuration
+    env: environment
+    dev: development
+    prod: production
+  terminology:
+    - bash
+    - shell
+    - command
+    - pipeline
+    - redirect
+  extra_context:
+    - "history -30"
+    - "pwd"
+    - "ls -la | head -10"
+  llm_config:
+    provider: xai
+    model: grok-3-mini
+    temperature: 0.1
+    max_tokens: 200
+  output_format: code
+  memory_scope: session
+  system_prompt: |
+    You are a technical command-line assistant. Preserve exact command syntax and technical terms.
+    Only fix obvious typos. Keep responses concise and technically accurate.
+  shortcuts:
+    "go to": "cd"
+    "list files": "ls -la"
+    "make directory": "mkdir -p"
+
+gmail:
+  app_class: chrome
+  writing_style: formal
+  context_rules:
+    - Use proper email etiquette
+    - Include appropriate greetings and closings
+    - Check grammar and spelling
+    - Maintain professional tone
+  abbreviations:
+    asap: as soon as possible
+    fyi: for your information
+    eod: end of day
+    cob: close of business
+  extra_context:
+    - "echo 'Current time:' && date"
+    - "echo 'Recent emails context'"
+  llm_config:
+    provider: xai
+    model: grok-3-mini
+    temperature: 0.5
+    max_tokens: 500
+  output_format: text
+  memory_scope: persistent
+  system_prompt: |
+    You are an email writing assistant. Improve clarity, professionalism, and grammar.
+    Maintain the user's intent and key points. Add appropriate email formatting if missing.
+
+gmailchrome:
+  app_class: chrome
+  writing_style: conversational
+  extra_context:
+    - "echo 'Browser context'"
+    - "date"
+  context_rules:
+    - Use proper email etiquette
+    - Include appropriate greetings and closings
+    - Check grammar and spelling
+    - Maintain professional tone
+  llm_config:
+    provider: xai
+    model: grok-3-mini
+    temperature: 0.4
+    max_tokens: 300
+  output_format: text
+  memory_scope: session
+  system_prompt: |
+    You are a general writing assistant. Improve text clarity and correctness.
+    Adapt style based on context. Keep user's main message intact.
+
+vscode:
+  app_class: code
+  writing_style: technical
+  extra_context:
+    - "git status 2>/dev/null || echo 'Not a git repo'"
+    - "git branch --show-current 2>/dev/null || echo ''"
+    - "find . -maxdepth 2 -name '*.py' -o -name '*.js' -o -name '*.ts' 2>/dev/null | head -20"
+  context_rules:
+    - Preserve code syntax
+    - Use appropriate comments
+    - Follow language conventions
+    - Maintain indentation
+  terminology:
+    - function
+    - variable
+    - class
+    - method
+    - import
+    - return
+    - async
+    - await
+  llm_config:
+    provider: xai
+    model: grok-3-mini
+    temperature: 0.2
+    max_tokens: 300
+  output_format: code
+  memory_scope: persistent
+  system_prompt: |
+    You are a code documentation assistant. Improve code comments and documentation.
+    Preserve exact code syntax. Only improve natural language in comments.
+
+windsurf:
+  app_class: windsurf
+  writing_style: technical
+  extra_context:
+    - "git status 2>/dev/null || echo 'Not a git repo'"
+    - "git branch --show-current 2>/dev/null || echo ''"
+    - "git diff --name-only 2>/dev/null | head -20"
+    - "find . -maxdepth 2 -name '*.py' -o -name '*.js' -o -name '*.ts' -o -name '*.go' 2>/dev/null | head -20"
+  context_rules:
+    - Preserve code syntax
+    - Use appropriate comments
+    - Follow language conventions
+    - Maintain indentation
+    - Prefer minimal diffs and safe refactors
+  terminology:
+    - function
+    - variable
+    - class
+    - method
+    - import
+    - return
+    - async
+    - await
+  llm_config:
+    provider: xai
+    model: grok-3-mini
+    temperature: 0.2
+    max_tokens: 400
+  output_format: code
+  memory_scope: persistent
+  system_prompt: |
+    You are a coding assistant inside the Windsurf editor. Generate correct, runnable code.
+    Keep changes minimal and aligned with the existing style. Add concise comments only when helpful.
+
+discord:
+  app_class: discord
+  writing_style: casual
+  context_rules:
+    - Keep it conversational
+    - Allow informal language
+    - Preserve emoticons and emoji intent
+    - Don't over-formalize
+  llm_config:
+    provider: xai
+    model: grok-3-mini
+    temperature: 0.7
+    max_tokens: 200
+  output_format: text
+  memory_scope: session
+  system_prompt: |
+    You are a casual conversation assistant. Keep the tone friendly and informal.
+    Preserve the user's personality and speaking style. Fix only major errors.
+
+firefox:
+  app_class: firefox
+  writing_style: neutral
+  context_rules:
+    - Adapt to context (search, forms, comments)
+    - Fix spelling and grammar
+    - Keep original intent
+  llm_config:
+    provider: xai
+    model: grok-3-mini
+    temperature: 0.4
+    max_tokens: 300
+  output_format: text
+  memory_scope: session
+  system_prompt: |
+    You are a general writing assistant. Improve text clarity and correctness.
+    Adapt style based on context. Keep user's main message intact.
+
+slack:
+  app_class: slack
+  writing_style: casual
+  extra_context:
+    - "echo 'Slack workspace context'"
+    - "date '+%H:%M %Z'"
+  context_rules:
+    - Professional but friendly tone
+    - Clear and concise
+    - Use appropriate channel etiquette
+  abbreviations:
+    dm: direct message
+    pm: project manager
+    eta: estimated time of arrival
+    ooo: out of office
+  llm_config:
+    provider: xai
+    model: grok-3-mini
+    temperature: 0.4
+    max_tokens: 300
+  output_format: text
+  memory_scope: persistent
+  system_prompt: |
+    You are a workplace communication assistant. Keep messages professional yet friendly.
+    Be clear and concise. Maintain appropriate workplace tone.
+
+obsidian:
+  app_class: obsidian
+  writing_style: structured
+  extra_context:
+    - "date '+%Y-%m-%d'"
+    - "echo 'Note-taking context'"
+  context_rules:
+    - Use markdown formatting
+    - Create clear headings
+    - Organize thoughts logically
+    - Add appropriate links syntax
+  llm_config:
+    provider: xai
+    model: grok-3-mini
+    temperature: 0.5
+    max_tokens: 500
+  output_format: markdown
+  memory_scope: persistent
+  system_prompt: |
+    You are a note-taking assistant. Format text using markdown.
+    Organize information clearly. Preserve technical accuracy and links.
+
+telegram:
+  app_class: telegram
+  writing_style: casual
+  context_rules:
+    - Conversational tone
+    - Allow informal language
+    - Keep messages concise
+  llm_config:
+    provider: xai
+    model: grok-3-mini
+    temperature: 0.6
+    max_tokens: 200
+  output_format: text
+  memory_scope: session
+  system_prompt: |
+    You are a messaging assistant. Keep responses natural and conversational.
+    Fix major errors but preserve casual tone and personality.
+
+default:
+  writing_style: neutral
+  context_rules:
+    - Improve clarity
+    - Fix grammar and spelling
+    - Maintain original intent
+  llm_config:
+    provider: xai
+    model: grok-3-mini
+    temperature: 0.3
+    max_tokens: 300
+  output_format: text
+  memory_scope: session
+  system_prompt: |
+    You are a helpful writing assistant. Improve text clarity and correctness.
+    Preserve the user's intent and main message.

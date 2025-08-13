@@ -1,0 +1,53 @@
+# Core dependencies
+python-dotenv>=1.0.1
+pyyaml>=6.0
+loguru>=0.7.2
+asyncio>=3.4.3
+aiofiles>=23.2.1
+
+# Audio processing
+pyaudio==0.2.14
+sounddevice==0.4.6
+numpy==1.26.4
+webrtcvad==2.0.10
+pydub==0.25.1
+
+# Speech processing
+# openai-whisper==20231117  # Commented due to triton dependency issue
+faster-whisper>=0.10.0  # Use faster-whisper instead
+# whisper-cpp-python==0.1.0
+
+# Clipboard and system
+pyperclip==1.8.2
+xdotool==0.3  # Linux only
+python-xlib==0.33  # Linux X11
+
+# Memory and context with Cognee
+cognee==0.2.1
+lancedb>=0.24.0,<1.0.0  # Match Cognee requirement
+voyageai>=0.2.3
+websockets>=11.0
+plyer>=2.1.0
+
+# Cognee internal dependencies (required for knowledge graph operations)
+transformers>=4.55.0
+huggingface-hub==0.34.4  # Pinned version to fix dependency resolution
+safetensors>=0.6.0
+
+# LLM providers  
+openai>=1.80.1  # For XAI API compatibility and Cognee requirement
+litellm>=1.41.0
+
+# MCP (Model Context Protocol)
+# Note: MCP tools are loaded from YAML files, no pip package needed
+
+# Utilities
+rich==13.7.0
+click==8.1.7
+httpx==0.25.2
+tenacity==8.2.3
+requests>=2.32.0
+soundfile>=0.12.1
+
+# Optional performance
+# uvloop==0.19.0  # Removed due to compilation issues

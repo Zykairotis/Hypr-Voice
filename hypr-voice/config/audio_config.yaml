@@ -1,0 +1,73 @@
+# Audio Configuration for Hypr-Voice
+# High-quality audio recording settings and device management
+
+audio:
+  # Recording quality settings
+  quality:
+    # Sample rate in Hz (48000 = studio quality, 44100 = CD quality, 16000 = phone quality)
+    sample_rate: 48000
+    # Number of channels (1 = mono, 2 = stereo)
+    channels: 1
+    # Audio data type
+    dtype: float32
+    # Block size for audio streaming
+    blocksize: 2048
+    # Fallback sample rates to try if primary fails
+    fallback_sample_rates: [44100, 48000, 32000, 24000, 16000]
+    
+  # Input device configuration
+  devices:
+    # Primary input device (name or index, or "default")
+    primary:
+      name: "GA102 High Definition"
+      # Optional: specific device name substring to match
+      # name: "USB Audio"
+      # name: "Blue Yeti"
+      # name: "Rode"
+      
+    # Secondary/fallback input device
+    secondary:
+      name: "default"
+      # Optional: specific device name substring to match
+      # name: "Webcam"
+      # name: "Built-in"
+      
+    # Auto-switch to secondary if primary fails
+    auto_fallback: true
+    
+    # List devices on startup for debugging
+    list_on_startup: true
+    
+  # Audio processing settings
+  processing:
+    # Apply noise reduction (requires additional dependencies)
+    noise_reduction: false
+    # Normalize audio levels
+    normalize: true
+    # Target loudness (dBFS)
+    target_loudness: -20
+    
+  # Recording settings
+  recording:
+    # Maximum recording duration in seconds
+    max_duration: 60
+    # Silence detection threshold (0.0 to 1.0)
+    silence_threshold: 0.01
+    # Silence duration to stop recording (seconds)
+    silence_duration: 2.0
+    # Audio format for saved files
+    format: "wav"
+    # Compression quality (for formats that support it)
+    compression_quality: 0.8
+    
+  # Whisper transcription settings
+  whisper:
+    # Preferred sample rate for Whisper (16000 is optimal for Whisper)
+    # We'll downsample from high-quality recording to this for transcription
+    target_sample_rate: 16000
+    # Whether to keep high-quality originals
+    keep_originals: true
+    # Directory for high-quality originals
+    originals_dir: "recordings/originals"
+    # Directory for processed/downsampled files
+    processed_dir: "recordings/processed"

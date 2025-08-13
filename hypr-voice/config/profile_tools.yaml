@@ -1,0 +1,150 @@
+# Profile-Specific MCP Tools Configuration
+# These tools are only available to specific application profiles
+
+git_commit:
+  description: "Create git commits with AI-generated messages"
+  server: "git-mcp"
+  transport: "stdio"
+  profiles: ["terminal", "vscode"]
+  parameters:
+    message:
+      type: string
+      description: "Commit message"
+      required: true
+    files:
+      type: array
+      description: "Files to commit"
+
+code_refactor:
+  description: "AI-powered code refactoring suggestions"
+  server: "code-mcp"
+  transport: "stdio"
+  profiles: ["vscode", "terminal"]
+  parameters:
+    code:
+      type: string
+      description: "Code to refactor"
+      required: true
+    language:
+      type: string
+      description: "Programming language"
+
+email_compose:
+  description: "Compose professional emails with AI"
+  server: "email-mcp"
+  transport: "stdio"
+  profiles: ["gmail"]
+  parameters:
+    to:
+      type: string
+      description: "Recipient email"
+    subject:
+      type: string
+      description: "Email subject"
+    body:
+      type: string
+      description: "Email body"
+      required: true
+
+slack_format:
+  description: "Format messages for Slack with mentions and channels"
+  server: "slack-mcp"
+  transport: "stdio"
+  profiles: ["slack"]
+  parameters:
+    message:
+      type: string
+      description: "Message to format"
+      required: true
+    channel:
+      type: string
+      description: "Target channel"
+
+discord_format:
+  description: "Format messages for Discord with mentions and markdown"
+  server: "discord-mcp"
+  transport: "stdio"
+  profiles: ["discord"]
+  parameters:
+    message:
+      type: string
+      description: "Message to format"
+      required: true
+    type:
+      type: string
+      description: "Message type (text, embed, code)"
+      default: "text"
+
+note_enhance:
+  description: "Enhance notes with AI-powered formatting and links"
+  server: "notes-mcp"
+  transport: "stdio"
+  profiles: ["obsidian"]
+  parameters:
+    content:
+      type: string
+      description: "Note content"
+      required: true
+    format:
+      type: string
+      description: "Output format (markdown, org, plain)"
+      default: "markdown"
+
+web_summarize:
+  description: "Summarize web pages and articles"
+  server: "web-mcp"
+  transport: "stdio"
+  profiles: ["firefox"]
+  parameters:
+    url:
+      type: string
+      description: "URL to summarize"
+      required: true
+    length:
+      type: string
+      description: "Summary length (short, medium, long)"
+      default: "medium"
+
+telegram_format:
+  description: "Format messages for Telegram with proper styling"
+  server: "telegram-mcp"
+  transport: "stdio"
+  profiles: ["telegram"]
+  parameters:
+    message:
+      type: string
+      description: "Message to format"
+      required: true
+    parse_mode:
+      type: string
+      description: "Parse mode (Markdown, HTML)"
+      default: "Markdown"
+
+terminal_explain:
+  description: "Explain terminal commands and their options"
+  server: "terminal-mcp"
+  transport: "stdio"
+  profiles: ["terminal"]
+  parameters:
+    command:
+      type: string
+      description: "Command to explain"
+      required: true
+
+vscode_snippet:
+  description: "Generate code snippets and boilerplate"
+  server: "vscode-mcp"
+  transport: "stdio"
+  profiles: ["vscode"]
+  parameters:
+    language:
+      type: string
+      description: "Programming language"
+      required: true
+    type:
+      type: string
+      description: "Snippet type"
+      required: true
+    context:
+      type: string
+      description: "Additional context"

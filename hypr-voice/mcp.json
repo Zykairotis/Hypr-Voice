@@ -1,0 +1,251 @@
+{
+  "mcpServers": {
+    "Context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"],
+      "env": {},
+      "disabled": false,
+      "autoApprove": []
+    },
+    "exa": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@smithery/cli@latest",
+        "run",
+        "exa",
+        "--key",
+        "b2f9ce9d-f990-49c9-8751-0736db36af81",
+        "--profile",
+        "fellow-stoat-Y9UZeE"
+      ],
+      "env": {},
+      "disabled": false,
+      "autoApprove": []
+    },
+    "Perplexity-search": {
+      "command": "/home/mewtwo/Code/Tools/Perplexity-unofficial-api-v1/.venv/bin/python",
+      "args": [
+        "/home/mewtwo/Code/Tools/Perplexity-unofficial-api-v1/Perplexity-Unofficial-main/web_search_mcp_server.py"
+      ],
+      "env": {
+        "SERVER_URL": "http://localhost:4000",
+        "VIRTUAL_ENV": "/home/mewtwo/Code/Tools/Perplexity-unofficial-api-v1/.venv"
+      }
+    },
+    "Calendly-2nuoqn": {
+      "command": "npx",
+      "args": [
+        "@composio/mcp@latest",
+        "start",
+        "--url",
+        "https://mcp.composio.dev/composio/server/e00b4843-8438-49bd-8501-02aebd33a341/mcp?include_composio_helper_actions=true"
+      ],
+      "env": {
+        "npm_config_yes": "true"
+      }
+    },
+    "Resend-fblurw": {
+      "command": "npx",
+      "args": [
+        "@composio/mcp@latest",
+        "start",
+        "--url",
+        "https://mcp.composio.dev/composio/server/e678e413-dee2-4d43-b1e5-6eddddaf7632/mcp?include_composio_helper_actions=true"
+      ],
+      "env": {
+        "npm_config_yes": "true"
+      }
+    },
+    "Googledrive-h8v3fu": {
+      "command": "npx",
+      "args": [
+        "@composio/mcp@latest",
+        "start",
+        "--url",
+        "https://mcp.composio.dev/composio/server/b4131dd3-471a-4ed3-9cf9-14525f9edf73/mcp?include_composio_helper_actions=true"
+      ],
+      "env": {
+        "npm_config_yes": "true"
+      }
+    },
+    "Supabase-b3ijh1": {
+      "command": "npx",
+      "args": [
+        "@composio/mcp@latest",
+        "start",
+        "--url",
+        "https://mcp.composio.dev/composio/server/8966d371-537e-4e66-b489-f8651bf18cb0/mcp?include_composio_helper_actions=true"
+      ],
+      "env": {
+        "npm_config_yes": "true"
+      }
+    },
+    "Firecrawl-sr5jcg": {
+      "command": "npx",
+      "args": [
+        "@composio/mcp@latest",
+        "start",
+        "--url",
+        "https://mcp.composio.dev/composio/server/7f6b74cf-d832-4c75-bcbb-2fefd720745d/mcp?include_composio_helper_actions=true"
+      ],
+      "env": {
+        "npm_config_yes": "true"
+      }
+    },
+    "Exa-o5ncn1": {
+      "command": "npx",
+      "args": [
+        "@composio/mcp@latest",
+        "start",
+        "--url",
+        "https://mcp.composio.dev/composio/server/1443990c-8e9b-4a8b-a9a2-7b558c9692af/mcp?include_composio_helper_actions=true"
+      ],
+      "env": {
+        "npm_config_yes": "true"
+      }
+    },
+    "Youtube-984jn4": {
+      "command": "npx",
+      "args": [
+        "@composio/mcp@latest",
+        "start",
+        "--url",
+        "https://mcp.composio.dev/composio/server/968485cb-f641-4aa7-800b-7aa369959682/mcp?include_composio_helper_actions=true"
+      ],
+      "env": {
+        "npm_config_yes": "true"
+      }
+    },
+    "Gmail-ncty6w": {
+      "command": "npx",
+      "args": [
+        "@composio/mcp@latest",
+        "start",
+        "--url",
+        "https://mcp.composio.dev/composio/server/93638803-0767-46eb-8355-5dd291401718/mcp?include_composio_helper_actions=true"
+      ],
+      "env": {
+        "npm_config_yes": "true"
+      }
+    },
+    "Sourcegraph-eycpis": {
+      "command": "npx",
+      "args": [
+        "@composio/mcp@latest",
+        "start",
+        "--url",
+        "https://mcp.composio.dev/composio/server/1d4196ea-1506-4f5f-9db5-1b95d6c0f13f/mcp?include_composio_helper_actions=true"
+      ],
+      "env": {
+        "npm_config_yes": "true"
+      }
+    },
+    "Mem0-rp8a7l": {
+      "command": "npx",
+      "args": [
+        "@composio/mcp@latest",
+        "start",
+        "--url",
+        "https://mcp.composio.dev/composio/server/3dbafe75-9f9e-4b51-81c5-64c132b1d3b3/mcp?include_composio_helper_actions=true"
+      ],
+      "env": {
+        "npm_config_yes": "true"
+      }
+    },
+    "Visualization-chart-server": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@smithery/cli@latest",
+        "run",
+        "@antvis/mcp-server-chart",
+        "--key",
+        "b2f9ce9d-f990-49c9-8751-0736db36af81"
+      ]
+    },
+    "toolbox": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@smithery/cli@latest",
+        "run",
+        "@smithery/toolbox",
+        "--key",
+        "b2f9ce9d-f990-49c9-8751-0736db36af81",
+        "--profile",
+        "fellow-stoat-Y9UZeE"
+      ]
+    },
+    "server-sequential-thinking": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@smithery/cli@latest",
+        "run",
+        "@smithery-ai/server-sequential-thinking",
+        "--key",
+        "b2f9ce9d-f990-49c9-8751-0736db36af81",
+        "--profile",
+        "fellow-stoat-Y9UZeE"
+      ]
+    },
+    "todoist-mcp": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@smithery/cli@latest",
+        "run",
+        "@miottid/todoist-mcp",
+        "--key",
+        "b2f9ce9d-f990-49c9-8751-0736db36af81",
+        "--profile",
+        "fellow-stoat-Y9UZeE"
+      ]
+    },
+    "remote-shell-terminal-mcp": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@smithery/cli@latest",
+        "run",
+        "@samihalawa/remote-shell-terminal-mcp",
+        "--key",
+        "b2f9ce9d-f990-49c9-8751-0736db36af81"
+      ]
+    },
+    "swagger-mcp-server": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@smithery/cli@latest",
+        "run",
+        "@tuskermanshu/swagger-mcp-server",
+        "--key",
+        "b2f9ce9d-f990-49c9-8751-0736db36af81"
+      ]
+    },
+    "playwright-mcp": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@smithery/cli@latest",
+        "run",
+        "@microsoft/playwright-mcp",
+        "--key",
+        "b2f9ce9d-f990-49c9-8751-0736db36af81"
+      ]
+    },
+    "wikipedia-mcp": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@smithery/cli@latest",
+        "run",
+        "@geobio/wikipedia-mcp",
+        "--key",
+        "b2f9ce9d-f990-49c9-8751-0736db36af81"
+      ]
+    }
+  }
+}

@@ -1,0 +1,63 @@
+# LLM Provider Configuration for Hypr-Voice
+
+providers:
+  ollama:
+    enabled: true
+    base_url: http://localhost:11434
+    models:
+      - llama3.1
+      - mistral
+      - codellama
+      - phi3
+    default_model: llama3.1
+    timeout: 30
+    
+  openai:
+    enabled: false
+    api_key: ${OPENAI_API_KEY}  # Set via environment variable
+    models:
+      - gpt-4-turbo
+      - gpt-3.5-turbo
+      - gpt-4
+    default_model: gpt-3.5-turbo
+    max_retries: 3
+    
+  anthropic:
+    enabled: false
+    api_key: ${ANTHROPIC_API_KEY}  # Set via environment variable
+    models:
+      - claude-3-opus
+      - claude-3-sonnet
+      - claude-3-haiku
+    default_model: claude-3-sonnet
+    max_retries: 3
+    
+  google:
+    enabled: false
+    api_key: ${GOOGLE_API_KEY}  # Set via environment variable
+    models:
+      - gemini-pro
+      - gemini-pro-vision
+    default_model: gemini-pro
+    
+  xai:
+    enabled: false
+    api_key: ${XAI_API_KEY}  # Set via environment variable
+    models:
+      - grok-1
+    default_model: grok-1
+
+# Fallback order when primary provider fails
+fallback_order:
+  - ollama
+  - openai
+  - anthropic
+  - google
+  - xai
+
+# Global settings
+global:
+  cache_responses: true
+  cache_ttl: 3600  # 1 hour
+  log_requests: true
+  rate_limit: 100  # requests per minute

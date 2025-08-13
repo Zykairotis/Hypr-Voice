@@ -1,0 +1,30 @@
+.venv
+.idea
+.cursor
+.windsurf
+.aider*
+.env
+
+# Ignore everything by default
+*
+
+# Keep gitignore and only these two directories
+!.gitignore
+!hypr-voice/
+!hypr-voice/**
+!whisper/
+!whisper/**
+
+# Exclude transients inside allowed dirs
+hypr-voice/__pycache__/
+hypr-voice/.pytest_cache/
+hypr-voice/.env
+hypr-voice/.env.*
+hypr-voice/recordings/
+hypr-voice/*.wav
+hypr-voice/*.log
+
+whisper/__pycache__/
+whisper/.pytest_cache/
+whisper/.env
+whisper/.env.*
