@@ -1268,7 +1268,8 @@ class HyprVoice:
     ):
         """Send desktop notification using notify-send"""
         try:
-            cmd = ["notify-send", "-u", urgency, title, body]
+            # Set timeout to 2000ms (2 seconds)
+            cmd = ["notify-send", "-u", urgency, "-t", "2000", title, body]
             
             if actions:
                 for action in actions:

@@ -1,277 +1,984 @@
-# Application Profiles for Hypr-Voice
-# Each profile defines context-aware behavior for different applications
+# Application Profiles for Hypr-Voice (Enhanced & Modular)
+# Focus: Core functionality over specific application names
+# Structure: Shared templates with specialized overrides
 
-terminal:
-  app_class: kitty
-  writing_style: technical
+# =============================================================================
+# SHARED TEMPLATE DEFINITIONS
+# =============================================================================
+
+templates:
+  # Core web browsing functionality
+  web_browser: &web_browser
+    app_name: web_browser
+    app_class: web_browser
+    writing_style: adaptive
+    context_rules:
+      - Adapt tone based on website context (formal for business, casual for social)
+      - Improve grammar and spelling while maintaining intent
+      - Consider web form context (search, comments, posts, messages)
+      - Preserve URLs, links, and technical terms exactly
+      - Handle various input types with appropriate formatting
+      - Maintain platform-appropriate tone and character limits
+      - Preserve hashtags, mentions, and special formatting
+      - Optimize for web accessibility and clarity
+    
+    abbreviations:
+      url: web address
+      www: world wide web
+      html: hypertext markup language
+      js: javascript
+      css: cascading style sheets
+      http: hypertext transfer protocol
+      https: secure hypertext transfer protocol
+      ftp: file transfer protocol
+      dns: domain name system
+      ip: internet protocol
+      vpn: virtual private network
+      seo: search engine optimization
+      crm: customer relationship management
+      cms: content management system
+      api: application programming interface
+      saas: software as a service
+      paas: platform as a service
+      iaas: infrastructure as a service
+      json: javascript object notation
+      xml: extensible markup language
+      rss: really simple syndication
+      cdn: content delivery network
+      ssl: secure sockets layer
+      tls: transport layer security
+      oauth: open authorization
+      jwt: json web token
+    
+    terminology:
+      - browser
+      - webpage
+      - website
+      - bookmark
+      - history
+      - cookie
+      - cache
+      - session
+      - download
+      - upload
+      - streaming
+      - plugin
+      - extension
+      - tab management
+      - private browsing
+      - search engine
+      - social media
+      - e-commerce
+      - web application
+      - cloud service
+      - responsive design
+      - user interface
+      - user experience
+    
+    extra_context:
+      - "date '+%A, %B %d, %Y at %I:%M %p'"
+      - "echo 'Web browsing session active'"
+      - "xprop -id $(xprop -root _NET_ACTIVE_WINDOW | cut -d' ' -f5) WM_NAME 2>/dev/null | cut -d'\"' -f2 || echo 'Browser'"
+      - "hyprctl activewindow -j 2>/dev/null || true"
+      - "hyprctl -j activeworkspace 2>/dev/null || true"
+    
+    llm_config:
+      provider: xai
+      model: grok-3-mini
+      temperature: 0.7
+      max_tokens: 10000
+    
+    output_format: text
+    memory_scope: session
+    memory_tags: ["web", "browser", "navigation", "search"]
+    context_window_size: 4096
+    dataset_name: "web_browser_context"
+    
+    shortcuts:
+      new_tab: "Ctrl+T"
+      close_tab: "Ctrl+W"
+      reopen_tab: "Ctrl+Shift+T"
+      find: "Ctrl+F"
+      bookmark: "Ctrl+D"
+      refresh: "F5"
+      back: "Alt+Left"
+      forward: "Alt+Right"
+      dev_tools: "F12"
+      
+    patterns:
+      - "*Mozilla Firefox*"
+      - "*Google Chrome*"
+      - "*Chromium*"
+      - "*Brave*"
+      - "*Microsoft Edge*"
+      - "*Safari*"
+      - "*Opera*"
+      - "*Vivaldi*"
+      
+    mcp_tools:
+      - "Perplexity-search"
+      - "exa"
+      - "Firecrawl-sr5jcg"
+      - "Context7"
+      - "wikipedia-mcp"
+      - "playwright-mcp"
+    
+    system_prompt: |
+      You are an intelligent web browsing writing assistant that adapts to different online contexts.
+
+      CONTEXT ADAPTATION:
+      - Business/Professional sites: Formal, clear, and professional language
+      - Social Media platforms: Engaging, conversational, and community-appropriate
+      - Forums and communities: Match community tone while maintaining clarity
+      - Search interfaces: Optimize queries for relevant, accurate results
+      - E-commerce platforms: Clear product descriptions and helpful reviews
+      - Educational platforms: Maintain academic tone with proper citations
+      - News and media sites: Respectful commenting with factual basis
+
+      TECHNICAL PRECISION:
+      - Preserve all URLs, email addresses, and technical specifications
+      - Maintain hashtags, mentions, and platform-specific formatting
+      - Optimize content for platform character limits and constraints
+      - Handle form fields appropriately (concise for names, detailed for descriptions)
+      - Ensure proper link formatting and accessibility
+
+      QUALITY STANDARDS:
+      - Improve grammar, spelling, and clarity while preserving original intent
+      - Maintain authentic voice while enhancing professionalism
+      - Consider cultural context and international audiences
+      - Optimize for readability and engagement across devices
+
+  # Development environment functionality
+  code_editor: &code_editor
+    app_name: code_editor
+    app_class: code_editor
+    writing_style: technical_precise
+    context_rules:
+      - Preserve exact code syntax, indentation, and formatting
+      - Follow language-specific conventions and style guides
+      - Generate meaningful comments and comprehensive documentation
+      - Maintain consistent naming conventions and patterns
+      - Preserve import statements, dependencies, and module structure
+      - Use appropriate design patterns and best practices
+      - Include proper error handling and type safety
+      - Follow DRY principles and code organization standards
+    
+    abbreviations:
+      func: function
+      var: variable  
+      const: constant
+      obj: object
+      arr: array
+      str: string
+      int: integer
+      bool: boolean
+      float: floating point
+      async: asynchronous
+      sync: synchronous
+      api: application programming interface
+      rest: representational state transfer
+      graphql: graph query language
+      sql: structured query language
+      nosql: not only structured query language
+      orm: object-relational mapping
+      mvc: model-view-controller
+      mvp: model-view-presenter
+      mvvm: model-view-viewmodel
+      crud: create read update delete
+      oop: object-oriented programming
+      fp: functional programming
+      tdd: test-driven development
+      bdd: behavior-driven development
+      ci: continuous integration
+      cd: continuous deployment
+      devops: development operations
+      ide: integrated development environment
+      lsp: language server protocol
+
+    
+    terminology:
+      - function
+      - method
+      - class
+      - interface
+      - abstract
+      - inheritance
+      - polymorphism
+      - encapsulation
+      - composition
+      - dependency injection
+      - design pattern
+      - algorithm
+      - data structure
+      - recursion
+      - iteration
+      - concurrency
+      - parallelism
+      - asynchronous
+      - callback
+      - promise
+      - async await
+      - exception handling
+      - debugging
+      - profiling
+      - optimization
+      - refactoring
+      - code review
+      - unit testing
+      - integration testing
+      - documentation
+      - version control
+      - branching strategy
+      - deployment
+    
+    extra_context:
+      - "hyprctl activewindow -j 2>/dev/null || true"
+    
+    llm_config:
+      provider: xai
+      model: grok-3-mini
+      temperature: 0.6
+      max_tokens: 10000 
+    
+    output_format: code
+    memory_scope: persistent
+    memory_tags: ["development", "coding", "programming", "ide"]
+    context_window_size: 8192
+    dataset_name: "code_editor_context"
+    
+    shortcuts:
+      save: "Ctrl+S"
+      save_all: "Ctrl+Shift+S"
+      undo: "Ctrl+Z"
+      redo: "Ctrl+Y"
+      find: "Ctrl+F"
+      replace: "Ctrl+H"
+      comment: "Ctrl+/"
+      format: "Shift+Alt+F"
+      go_to_line: "Ctrl+G"
+      go_to_definition: "F12"
+      rename: "F2"
+      
+    patterns:
+      - "*Visual Studio Code*"
+      - "*VSCode*"
+      - "*Code - OSS*"
+      - "*Cursor*"
+      - "*Windsurf*"
+      - "*IntelliJ IDEA*"
+      - "*PyCharm*"
+      - "*WebStorm*"
+      - "*Android Studio*"
+      - "*Sublime Text*"
+      - "*Atom*"
+      - "*Vim*"
+      - "*Neovim*"
+      - "*Emacs*"
+      
+    mcp_tools:
+      - "Sourcegraph-eycpis"
+      - "Context7"
+      - "Mem0-rp8a7l"
+      - "exa"
+      - "Perplexity-search"
+      - "swagger-mcp-server"
+      - "toolbox"
+    
+    system_prompt: |
+      You are an advanced code development assistant focused on producing high-quality, maintainable software.
+
+      CORE DEVELOPMENT PRINCIPLES:
+      - Generate clean, readable code following established language conventions
+      - Create comprehensive documentation with clear examples
+      - Implement robust error handling and input validation  
+      - Follow SOLID principles and appropriate design patterns
+      - Maintain consistent code formatting and style
+      - Optimize for performance while prioritizing readability
+      - Include meaningful variable names and function signatures
+      - Apply security best practices and avoid common vulnerabilities
+
+      LANGUAGE-SPECIFIC EXCELLENCE:
+      - Python: PEP 8 compliance, type hints, comprehensive docstrings
+      - JavaScript/TypeScript: ESLint standards, JSDoc comments, modern syntax
+      - Java: Oracle conventions, JavaDoc, proper exception handling
+      - C/C++: Standard conventions, memory management, Doxygen documentation
+      - Go: Idiomatic Go patterns, godoc format, effective error handling
+      - Rust: Safety-first approach, comprehensive documentation, cargo conventions
+      - PHP: PSR standards, proper namespace usage, security considerations
+      - Ruby: Ruby conventions, RDoc format, idiomatic patterns
+
+      CODE QUALITY FOCUS:
+      - Maintainability over cleverness
+      - Clear separation of concerns
+      - Appropriate abstraction levels
+      - Comprehensive testing considerations
+      - Version control friendly structure
+      - Team collaboration ready formatting
+
+  # Terminal and command-line functionality
+  terminal_interface: &terminal_interface
+    app_name: terminal_interface
+    app_class: terminal
+    writing_style: command_precise
+    context_rules:
+      - Output executable commands with exact syntax
+      - Preserve shell-specific syntax and conventions
+      - Maintain proper spacing and special characters
+      - Never add unnecessary quotes or modifications
+      - Keep pipe chains and redirections intact
+      - Preserve environment variables and expansions
+      - Use standard Unix conventions and flags
+      - Prioritize accuracy over explanation
+    
+    abbreviations:
+      dir: directory
+      dirs: directories
+      repo: repository
+      config: configuration
+      conf: configuration
+      env: environment
+      dev: development
+      prod: production
+      src: source
+      dest: destination
+      perms: permissions
+      proc: process
+      procs: processes
+      sys: system
+      admin: administrator
+      tmp: temporary
+      usr: user
+      grp: group
+      lib: library
+      libs: libraries
+      bin: binary
+      exec: executable
+      script: shell script
+      daemon: background process
+      service: system service
+      mount: filesystem mount
+      umount: filesystem unmount
+      net: network
+      iface: interface
+      pkg: package
+      dist: distribution
+      arch: architecture
+      kernel: operating system kernel
+    
+    terminology:
+      - shell
+      - bash
+      - zsh
+      - fish
+      - command line
+      - terminal
+      - console
+      - pipeline
+      - redirection
+      - pipe
+      - filter
+      - stream
+      - stdin
+      - stdout  
+      - stderr
+      - process
+      - subprocess
+      - background job
+      - foreground job
+      - daemon
+      - service
+      - cron
+      - systemd
+      - environment variable
+      - path
+      - alias
+      - function
+      - script
+      - regular expression
+      - glob pattern
+      - wildcard
+      - file permissions
+      - ownership
+      - filesystem
+      - mount point
+      - symbolic link
+      - hard link
+      - archive
+      - compression
+      - package management
+      - system administration
+    
+    extra_context:
+      - "pwd"
+      - "whoami"
+      - "echo $SHELL"
+      - "uname -a"
+      - "date '+%Y-%m-%d %H:%M:%S'"
+      - "history | tail -5"
+      - "ls -la | head -3"
+      - "ps aux --sort=-%cpu | head -3"
+      - "df -h / 2>/dev/null | tail -1"
+      - "echo $PATH | tr ':' '\n' | head -5"
+      - "hyprctl activewindow -j 2>/dev/null || true"
+    
+    llm_config:
+      provider: xai
+      model: grok-3-mini
+      temperature: 0.6
+      max_tokens: 10000 
+    
+    output_format: text
+    memory_scope: session
+    memory_tags: ["terminal", "cli", "command", "shell", "bash"]
+    context_window_size: 4096
+    dataset_name: "terminal_context"
+    
+    shortcuts:
+      copy: "Ctrl+Shift+C"
+      paste: "Ctrl+Shift+V"
+      interrupt: "Ctrl+C"
+      clear: "Ctrl+L"
+      search: "Ctrl+R"
+      tab_complete: "Tab"
+      cancel: "Ctrl+D"
+      suspend: "Ctrl+Z"
+      
+    patterns:
+      - "*kitty*"
+      - "*alacritty*"
+      - "*konsole*"
+      - "*gnome-terminal*"
+      - "*terminator*"
+      - "*xterm*"
+      - "*urxvt*"
+      - "*st*"
+      - "*wezterm*"
+      - "*Terminal*"
+      
+    mcp_tools:
+      - "remote-shell-terminal-mcp"
+      - "toolbox"
+      - "Context7"
+      - "Perplexity-search"
+      - "exa"
+    
+    system_prompt: |
+      You are a command-line interface assistant specializing in Unix/Linux system operations.
+
+      COMMAND GENERATION RULES:
+      - Output ONLY executable commands without explanations
+      - Preserve exact syntax, spacing, and punctuation
+      - Use standard POSIX-compliant commands when possible
+      - Maintain proper flag syntax and parameter order
+      - Keep pipe chains, redirections, and logical operators intact
+      - Preserve environment variables, expansions, and special characters
+      - Default to the most commonly used and reliable command variants
+      - Ensure commands are safe and non-destructive unless explicitly requested
+
+      SHELL COMPATIBILITY:
+      - Prioritize POSIX compliance for maximum compatibility
+      - Use bash-specific features only when necessary
+      - Support common shells (bash, zsh, fish) appropriately
+      - Handle different operating system variants (Linux, macOS, BSD)
+
+      SAFETY AND BEST PRACTICES:
+      - Prefer safer command variants (e.g., 'rm -i' for interactive deletion)
+      - Use appropriate permissions and privilege escalation
+      - Include error checking in complex command chains
+      - Optimize for both correctness and efficiency
+
+  # Messaging and communication functionality  
+  instant_messaging: &instant_messaging
+    app_name: instant_messaging
+    app_class: messaging
+    writing_style: conversational
+    context_rules:
+      - Maintain natural, engaging conversation flow
+      - Fix obvious errors while preserving casual tone
+      - Consider message threading and reply context
+      - Handle both individual and group communication
+      - Support multimedia and rich content context
+      - Be mindful of international communication styles
+      - Optimize for mobile and desktop messaging
+      - Preserve informal expressions and personality
+    
+    abbreviations:
+      msg: message
+      msgs: messages
+      dm: direct message
+      pm: private message
+      gc: group chat
+      thread: conversation thread
+      reply: response
+      fwd: forward
+      cc: carbon copy
+      bcc: blind carbon copy
+      admin: administrator
+      mod: moderator
+      bot: automated account
+      ai: artificial intelligence
+      ml: machine learning
+      tech: technology
+      dev: developer
+      ops: operations
+      biz: business
+      corp: corporate
+      startup: new company
+      vc: venture capital
+      ipo: initial public offering
+      saas: software as a service
+      b2b: business to business
+      b2c: business to consumer
+      kpi: key performance indicator
+      roi: return on investment
+      cta: call to action
+      ui: user interface
+      ux: user experience
+      mvp: minimum viable product
+    
+    terminology:
+      - instant messaging
+      - real-time communication
+      - chat application
+      - messaging platform
+      - end-to-end encryption
+      - message threading
+      - conversation history
+      - contact management
+      - group administration
+      - notification management
+      - multimedia sharing
+      - file transfer
+      - screen sharing
+      - voice messaging
+      - video calling
+      - status updates
+      - presence indicators
+      - message reactions
+      - custom emoji
+      - stickers
+      - animated graphics
+      - message formatting
+      - cross-platform sync
+      - cloud storage
+      - backup and restore
+      - privacy controls
+      - security features
+    
+    extra_context:
+      - "date '+%H:%M'"
+      - "echo 'Messaging context active'"
+      - "hyprctl activewindow -j 2>/dev/null || true"
+    
+    llm_config:
+      provider: xai
+      model: grok-3-mini  
+      temperature: 0.6
+      max_tokens: 10000 
+    
+    output_format: text
+    memory_scope: session
+    memory_tags: ["messaging", "chat", "communication"]
+    context_window_size: 4096
+    dataset_name: "instant_messaging_context"
+    
+    shortcuts:
+      send: "Enter"
+      newline: "Shift+Enter"
+      search: "Ctrl+F"
+      bold: "Ctrl+B"
+      italic: "Ctrl+I"
+      code_block: "Ctrl+Shift+C"
+    
+    patterns:
+      - "*Telegram*"
+      - "*Discord*"
+      - "*Slack*"
+      - "*Signal*"
+      - "*WhatsApp*"
+      - "*Element*"
+    
+    mcp_tools:
+      - "Mem0-rp8a7l"
+      - "Context7"
+      - "Perplexity-search"
+      - "toolbox"
+    
+    system_prompt: |
+      You are a communication assistant specialized in instant messaging and real-time conversations.
+
+      MESSAGING EXCELLENCE:
+      - Maintain natural, engaging conversation flow
+      - Keep messages appropriately concise for the medium
+      - Fix grammar and spelling while preserving personality
+      - Use emoji and formatting naturally (avoid overuse)
+      - Adapt tone based on relationship and context
+      - Consider cultural sensitivity in international communications
+
+      CONTEXT AWARENESS:
+      - Personal conversations: Intimate and casual approach
+      - Group chats: Consider group dynamics and etiquette  
+      - Professional messaging: Business casual with warmth
+      - Community discussions: Respectful and inclusive tone
+      - Support conversations: Helpful and solution-focused
+      - Social interactions: Engaging and community-minded
+
+      PLATFORM OPTIMIZATION:
+      - Handle character limits and formatting constraints
+      - Support rich media context (images, videos, files)
+      - Maintain proper threading and reply structure
+      - Use platform-specific features (mentions, hashtags, reactions)
+      - Consider mobile vs desktop user experience
+      - Optimize for both synchronous and asynchronous communication
+
+      COMMUNICATION QUALITY:
+      - Clarity over brevity when important
+      - Emotional intelligence and empathy
+      - Appropriate humor and personality
+      - Respectful disagreement and conflict resolution
+      - Privacy awareness and discretion
+
+# =============================================================================
+# APPLICATION-SPECIFIC PROFILES
+# =============================================================================
+
+applications:
+  # Terminal Applications
+  terminal:
+    app_class: kitty
+    app_name: terminal
+    <<: *terminal_interface
+    shortcuts:
+      "go to": "cd"
+      "list files": "ls -la" 
+      "list all": "ls -la"
+      "make directory": "mkdir -p"
+      "create directory": "mkdir -p"
+      "remove file": "rm"
+      "delete file": "rm"
+      "copy file": "cp"
+      "move file": "mv"
+      "rename": "mv"
+      "edit file": "nano"
+      "open editor": "nano"
+      "find file": "find . -name"
+      "search files": "find . -name"
+      "search text": "grep -r"
+      "search in files": "grep -r"
+      "show processes": "ps aux"
+      "list processes": "ps aux"
+      "disk space": "df -h"
+      "disk usage": "du -sh"
+      "current directory": "pwd"
+      "where am i": "pwd"
+      "show history": "history"
+      "command history": "history"
+      "make executable": "chmod +x"
+      "change permissions": "chmod"
+      "show file": "cat"
+      "display file": "cat"
+      "page file": "less"
+      "view file": "less"
+
+  # Web Browsers
+  zen:
+    app_class: zen
+    <<: *web_browser
+    app_name: zen
+    extra_context:
+      - "date '+%A, %B %d, %Y at %I:%M %p'"
+      - "echo 'Zen Browser (Firefox-based) session'"
+
+  firefox:
+    app_class: firefox  
+    <<: *web_browser
+    app_name: firefox
+
+  brave:
+    app_class: brave-browser
+    <<: *web_browser
+    app_name: brave
+    system_prompt: |
+      You are an intelligent web browsing assistant optimized for privacy-focused browsing.
+
+      PRIVACY-FIRST APPROACH:
+      - Consider ad-blocking and tracker prevention context
+      - Optimize content for enhanced privacy settings
+      - Be mindful of fingerprinting and tracking concerns
+      - Support cryptocurrency and Web3 contexts when relevant
+
+      CONTEXT ADAPTATION:
+      - Business/Professional sites: Formal, clear, and professional language
+      - Social Media platforms: Engaging, conversational, and community-appropriate  
+      - Forums and communities: Match community tone while maintaining clarity
+      - Search interfaces: Optimize queries for relevant, accurate results
+      - E-commerce platforms: Clear product descriptions and helpful reviews
+      - Educational platforms: Maintain academic tone with proper citations
+      - News and media sites: Respectful commenting with factual basis
+
+      TECHNICAL PRECISION:
+      - Preserve all URLs, email addresses, and technical specifications
+      - Maintain hashtags, mentions, and platform-specific formatting
+      - Optimize content for platform character limits and constraints
+      - Handle form fields appropriately (concise for names, detailed for descriptions)
+      - Ensure proper link formatting and accessibility
+
+  chromium:
+    app_class: chromium
+    <<: *web_browser
+    app_name: chromium
+
+  # Communication Platforms
+  telegram:
+    app_class: org.telegram.desktop
+    <<: *instant_messaging
+    app_name: telegram
+    llm_config:
+      provider: xai
+      model: grok-3-mini
+      temperature: 0.6
+      max_tokens: 10000 
+    system_prompt: |
+      You are a messaging assistant specialized in modern instant messaging with rich media support.
+
+      MESSAGING STYLE:
+      - Conversational and naturally engaging
+      - Mobile-optimized message length and structure
+      - Strategic emoji use (enhance meaning, don't overwhelm)
+      - Fix typos and grammar while preserving authentic voice
+      - Support both individual and group conversation dynamics
+      - Consider international users and cultural sensitivity
+
+      PLATFORM FEATURES:
+      - Support @username mentions and #hashtag organization
+      - Handle /command interfaces for bot interactions
+      - Use markdown formatting: **bold**, __italic__, `code`, ```blocks```
+      - Support inline links and button interactions
+      - Consider sticker, GIF, and media sharing context
+      - Handle message threading and reply functionality
+
+      CONVERSATION CONTEXTS:
+      - Personal chats: Warm, intimate, and supportive
+      - Group discussions: Inclusive, respectful of group dynamics
+      - Broadcast channels: Clear, informative, engaging
+      - Business communication: Professional yet approachable
+      - Community engagement: Helpful, knowledgeable, friendly
+
+      QUALITY STANDARDS:
+      - Clarity and conciseness for mobile reading
+      - Emotional intelligence and appropriate tone matching
+      - Cultural awareness for global communication
+      - Privacy consciousness and discretion
+
+  # Development Environments
+  cursor:
+    app_class: cursor
+    <<: *code_editor
+    app_name: cursor
+    llm_config:
+      provider: xai
+      model: grok-3-mini
+      temperature: 0.45
+      max_tokens: 10000 
+    system_prompt: |
+      You are an AI-powered development assistant focused on intelligent code completion and refactoring.
+
+      AI-ENHANCED DEVELOPMENT:
+      - Generate contextually aware code suggestions
+      - Propose intelligent refactoring and optimization opportunities
+      - Provide real-time code quality feedback and improvements
+      - Suggest modern patterns and best practices
+      - Offer automated testing and documentation generation
+
+      CODE EXCELLENCE STANDARDS:
+      - Produce production-ready, well-structured code
+      - Implement comprehensive error handling and validation
+      - Follow language-specific conventions and modern practices
+      - Create maintainable, self-documenting code
+      - Consider performance, security, and scalability implications
+      - Generate meaningful variable names and function signatures
+
+      INTELLIGENT ASSISTANCE:
+      - Analyze codebase context for consistent patterns
+      - Suggest minimal, high-impact changes and improvements
+      - Provide explanation through clear, concise comments
+      - Respect existing project conventions and tooling
+      - Optimize for team collaboration and code review readiness
+
+  windsurf:
+    app_class: windsurf
+    <<: *code_editor
+    app_name: windsurf
+    llm_config:
+      provider: xai
+      model: grok-3-mini
+      temperature: 0.45
+      max_tokens: 10000 
+    system_prompt: |
+      You are an advanced development assistant specializing in collaborative coding and project management.
+
+      COLLABORATIVE DEVELOPMENT:
+      - Generate team-friendly, well-documented code
+      - Consider project architecture and long-term maintainability  
+      - Implement comprehensive testing strategies
+      - Focus on design patterns and scalable solutions
+      - Include security considerations and performance optimization
+
+      PROFESSIONAL STANDARDS:
+      - Produce enterprise-grade, production-ready code
+      - Follow industry best practices and coding standards
+      - Include comprehensive error handling and logging
+      - Generate thorough documentation and code comments
+      - Consider deployment and operational requirements
+
+      PROJECT-FOCUSED APPROACH:
+      - Analyze project structure and existing patterns
+      - Suggest architectural improvements and refactoring
+      - Optimize for team workflows and collaboration
+      - Balance innovation with stability and reliability
+
+  vscode:
+    app_class: code
+    <<: *code_editor
+    app_name: vscode
+    system_prompt: |
+      You are a versatile development assistant for modern code editing and project development.
+
+      DEVELOPMENT EXCELLENCE:
+      - Generate clean, readable code following community standards
+      - Support multiple programming languages and frameworks
+      - Provide intelligent IntelliSense-style completions
+      - Suggest appropriate extensions and tooling integration
+      - Follow language-specific linting rules (ESLint, Pylint, etc.)
+
+      CODE QUALITY FOCUS:
+      - Maintain consistent formatting (Prettier, Black, gofmt)
+      - Generate meaningful docstrings and JSDoc comments
+      - Implement proper import management and module structure
+      - Suggest quick fixes and automated refactoring
+      - Support debugging and testing workflow integration
+
+      VERSATILE SUPPORT:
+      - Handle diverse project types and technology stacks
+      - Provide context-aware suggestions based on file types
+      - Support both frontend and backend development patterns
+      - Integrate with version control and deployment workflows
+
+  zed:
+    app_class: zed
+    <<: *code_editor
+    app_name: zed
+    system_prompt: |
+      You are a high-performance development assistant optimized for speed and collaborative editing.
+
+      PERFORMANCE-FIRST DEVELOPMENT:
+      - Generate efficient, clean code with minimal overhead
+      - Provide fast, responsive code suggestions and completions
+      - Optimize for real-time collaborative editing scenarios
+      - Focus on essential features and clear, concise code
+
+      COLLABORATIVE EXCELLENCE:
+      - Support pair programming and team development workflows
+      - Generate code that's immediately understandable to team members
+      - Provide quick, actionable suggestions and fixes
+      - Maintain consistent formatting and style across team projects
+
+      STREAMLINED APPROACH:
+      - Keep responses focused and implementation-ready
+      - Propose minimal, high-impact code changes
+      - Use inline comments sparingly, only when adding significant value
+      - Prioritize code clarity and maintainability over complexity
+
+  kiro:
+    app_class: kiro
+    <<: *code_editor
+    app_name: kiro
+    system_prompt: |
+      You are a development assistant focused on developer productivity and code reliability.
+
+      PRODUCTIVITY-ENHANCED DEVELOPMENT:
+      - Generate robust, type-safe code with comprehensive error handling
+      - Provide intelligent suggestions that improve developer workflow
+      - Focus on reducing cognitive load and development friction
+      - Highlight potential edge cases and error conditions
+
+      RELIABILITY STANDARDS:
+      - Implement thorough input validation and boundary checking
+      - Generate code with built-in resilience and fault tolerance
+      - Provide comprehensive testing examples and test case suggestions
+      - Consider security implications and vulnerability prevention
+
+      DEVELOPER ERGONOMICS:
+      - Create intuitive APIs and clear function signatures
+      - Generate self-documenting code with meaningful names
+      - Provide helpful examples and usage patterns
+      - Optimize for debugging and troubleshooting ease
+
+# =============================================================================
+# DEFAULT FALLBACK CONFIGURATION
+# =============================================================================
+
+default:
+  app_name: default
+  app_class: default
+  writing_style: adaptive_neutral
   context_rules:
-    - Preserve command syntax exactly
-    - Use common shell abbreviations
-    - Don't add unnecessary punctuation
-    - Maintain technical accuracy
+    - Maintain user intent while improving clarity and correctness
+    - Adapt formality level to content and context
+    - Preserve technical accuracy and specialized terminology
+    - Consider audience and communication purpose
+  
   abbreviations:
-    dir: directory
-    repo: repository
+    info: information
     config: configuration
-    env: environment
+    app: application
+    sys: system
     dev: development
     prod: production
-  terminology:
-    - bash
-    - shell
-    - command
-    - pipeline
-    - redirect
-  extra_context:
-    - "history -30"
-    - "pwd"
-    - "ls -la | head -10"
-  llm_config:
-    provider: xai
-    model: grok-3-mini
-    temperature: 0.1
-    max_tokens: 200
-  output_format: code
-  memory_scope: session
-  system_prompt: |
-    You are a technical command-line assistant. Preserve exact command syntax and technical terms.
-    Only fix obvious typos. Keep responses concise and technically accurate.
-  shortcuts:
-    "go to": "cd"
-    "list files": "ls -la"
-    "make directory": "mkdir -p"
-
-gmail:
-  app_class: chrome
-  writing_style: formal
-  context_rules:
-    - Use proper email etiquette
-    - Include appropriate greetings and closings
-    - Check grammar and spelling
-    - Maintain professional tone
-  abbreviations:
-    asap: as soon as possible
-    fyi: for your information
-    eod: end of day
-    cob: close of business
-  extra_context:
-    - "echo 'Current time:' && date"
-    - "echo 'Recent emails context'"
-  llm_config:
-    provider: xai
-    model: grok-3-mini
-    temperature: 0.5
-    max_tokens: 500
-  output_format: text
-  memory_scope: persistent
-  system_prompt: |
-    You are an email writing assistant. Improve clarity, professionalism, and grammar.
-    Maintain the user's intent and key points. Add appropriate email formatting if missing.
-
-gmailchrome:
-  app_class: chrome
-  writing_style: conversational
-  extra_context:
-    - "echo 'Browser context'"
-    - "date"
-  context_rules:
-    - Use proper email etiquette
-    - Include appropriate greetings and closings
-    - Check grammar and spelling
-    - Maintain professional tone
-  llm_config:
-    provider: xai
-    model: grok-3-mini
-    temperature: 0.4
-    max_tokens: 300
-  output_format: text
-  memory_scope: session
-  system_prompt: |
-    You are a general writing assistant. Improve text clarity and correctness.
-    Adapt style based on context. Keep user's main message intact.
-
-vscode:
-  app_class: code
-  writing_style: technical
-  extra_context:
-    - "git status 2>/dev/null || echo 'Not a git repo'"
-    - "git branch --show-current 2>/dev/null || echo ''"
-    - "find . -maxdepth 2 -name '*.py' -o -name '*.js' -o -name '*.ts' 2>/dev/null | head -20"
-  context_rules:
-    - Preserve code syntax
-    - Use appropriate comments
-    - Follow language conventions
-    - Maintain indentation
-  terminology:
-    - function
-    - variable
-    - class
-    - method
-    - import
-    - return
-    - async
-    - await
-  llm_config:
-    provider: xai
-    model: grok-3-mini
-    temperature: 0.2
-    max_tokens: 300
-  output_format: code
-  memory_scope: persistent
-  system_prompt: |
-    You are a code documentation assistant. Improve code comments and documentation.
-    Preserve exact code syntax. Only improve natural language in comments.
-
-windsurf:
-  app_class: windsurf
-  writing_style: technical
-  extra_context:
-    - "git status 2>/dev/null || echo 'Not a git repo'"
-    - "git branch --show-current 2>/dev/null || echo ''"
-    - "git diff --name-only 2>/dev/null | head -20"
-    - "find . -maxdepth 2 -name '*.py' -o -name '*.js' -o -name '*.ts' -o -name '*.go' 2>/dev/null | head -20"
-  context_rules:
-    - Preserve code syntax
-    - Use appropriate comments
-    - Follow language conventions
-    - Maintain indentation
-    - Prefer minimal diffs and safe refactors
-  terminology:
-    - function
-    - variable
-    - class
-    - method
-    - import
-    - return
-    - async
-    - await
-  llm_config:
-    provider: xai
-    model: grok-3-mini
-    temperature: 0.2
-    max_tokens: 400
-  output_format: code
-  memory_scope: persistent
-  system_prompt: |
-    You are a coding assistant inside the Windsurf editor. Generate correct, runnable code.
-    Keep changes minimal and aligned with the existing style. Add concise comments only when helpful.
-
-discord:
-  app_class: discord
-  writing_style: casual
-  context_rules:
-    - Keep it conversational
-    - Allow informal language
-    - Preserve emoticons and emoji intent
-    - Don't over-formalize
-  llm_config:
-    provider: xai
-    model: grok-3-mini
-    temperature: 0.7
-    max_tokens: 200
-  output_format: text
-  memory_scope: session
-  system_prompt: |
-    You are a casual conversation assistant. Keep the tone friendly and informal.
-    Preserve the user's personality and speaking style. Fix only major errors.
-
-firefox:
-  app_class: firefox
-  writing_style: neutral
-  context_rules:
-    - Adapt to context (search, forms, comments)
-    - Fix spelling and grammar
-    - Keep original intent
-  llm_config:
-    provider: xai
-    model: grok-3-mini
-    temperature: 0.4
-    max_tokens: 300
-  output_format: text
-  memory_scope: session
-  system_prompt: |
-    You are a general writing assistant. Improve text clarity and correctness.
-    Adapt style based on context. Keep user's main message intact.
-
-slack:
-  app_class: slack
-  writing_style: casual
-  extra_context:
-    - "echo 'Slack workspace context'"
-    - "date '+%H:%M %Z'"
-  context_rules:
-    - Professional but friendly tone
-    - Clear and concise
-    - Use appropriate channel etiquette
-  abbreviations:
-    dm: direct message
-    pm: project manager
-    eta: estimated time of arrival
-    ooo: out of office
-  llm_config:
-    provider: xai
-    model: grok-3-mini
-    temperature: 0.4
-    max_tokens: 300
-  output_format: text
-  memory_scope: persistent
-  system_prompt: |
-    You are a workplace communication assistant. Keep messages professional yet friendly.
-    Be clear and concise. Maintain appropriate workplace tone.
-
-obsidian:
-  app_class: obsidian
-  writing_style: structured
-  extra_context:
-    - "date '+%Y-%m-%d'"
-    - "echo 'Note-taking context'"
-  context_rules:
-    - Use markdown formatting
-    - Create clear headings
-    - Organize thoughts logically
-    - Add appropriate links syntax
-  llm_config:
-    provider: xai
-    model: grok-3-mini
-    temperature: 0.5
-    max_tokens: 500
-  output_format: markdown
-  memory_scope: persistent
-  system_prompt: |
-    You are a note-taking assistant. Format text using markdown.
-    Organize information clearly. Preserve technical accuracy and links.
-
-telegram:
-  app_class: telegram
-  writing_style: casual
-  context_rules:
-    - Conversational tone
-    - Allow informal language
-    - Keep messages concise
+    admin: administrator
+    user: end user
+    doc: document
+    specs: specifications
+    req: requirement
+    impl: implementation
+    
   llm_config:
     provider: xai
     model: grok-3-mini
     temperature: 0.6
-    max_tokens: 200
+    max_tokens: 10000 
+  
   output_format: text
   memory_scope: session
+  memory_tags: []
+  context_window_size: 4096
+  dataset_name: "default_context"
+  
+  shortcuts: {}
+  patterns: []
+  mcp_tools: []
+  extra_context: []
+  
   system_prompt: |
-    You are a messaging assistant. Keep responses natural and conversational.
-    Fix major errors but preserve casual tone and personality.
+    You are an intelligent writing and communication assistant that adapts to various contexts and applications.
 
-default:
-  writing_style: neutral
-  context_rules:
-    - Improve clarity
-    - Fix grammar and spelling
-    - Maintain original intent
-  llm_config:
-    provider: xai
-    model: grok-3-mini
-    temperature: 0.3
-    max_tokens: 300
-  output_format: text
-  memory_scope: session
-  system_prompt: |
-    You are a helpful writing assistant. Improve text clarity and correctness.
-    Preserve the user's intent and main message.
+    ADAPTIVE ASSISTANCE:
+    - Analyze context to determine appropriate writing style and tone
+    - Improve clarity, grammar, and structure while preserving intent
+    - Maintain technical accuracy and domain-specific terminology
+    - Consider audience, purpose, and communication medium
+
+    QUALITY STANDARDS:
+    - Enhance readability without losing original meaning
+    - Fix errors while preserving authentic voice and personality
+    - Optimize content for its intended use and platform
+    - Balance professionalism with appropriate personality
+
+    CONTEXT AWARENESS:
+    - Professional communication: Clear, courteous, and efficient
+    - Casual communication: Natural, engaging, and personable
+    - Technical documentation: Precise, comprehensive, and well-structured
+    - Creative content: Expressive, engaging, and authentic
+    - Educational content: Clear, informative, and accessible
+
+    Always prioritize accuracy, clarity, and user intent while enhancing overall communication effectiveness.

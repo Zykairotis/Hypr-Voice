@@ -20,16 +20,50 @@ A context-aware voice input system for Arch Linux with Hyprland, featuring intel
 - **GPU Acceleration** with CUDA support
 - **WebSocket Streaming** for low-latency communication
 
-## Architecture
+## Architecture Overview
 
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#1a1a1a'}}}%%
+graph TD
+    A[🎤 Audio Input] --> B(WhisperLive Server)
+    B --> C{Context Engine}
+    C --> D[📝 Local Cache]
+    C --> E[🧠 Cognee Memory]
+    C --> F[🤖 LLM Processing]
+    F --> G{Output Handler}
+    G --> H[📋 Clipboard]
+    G --> I[📝 Direct Paste]
+    G --> J[💬 Notification]
+    G --> K[📂 Save to File]
+    
+    D --> C
+    E --> C
+    
+    style A fill:#2e7d32,stroke:#4CAF50
+    style B fill:#1565c0,stroke:#1976D2
+    style C fill:#6a1b9a,stroke:#9C27B0
+    style D fill:#00695c,stroke:#00897B
+    style E fill:#283593,stroke:#3F51B5
+    style F fill:#c62828,stroke:#D32F2F
+    style G fill:#2e7d32,stroke:#4CAF50
 ```
-┌─────────────┐     ┌──────────────┐     ┌──────────────┐     ┌─────────────┐
-│ Audio Input │────▶│ WhisperLive  │────▶│   Context    │────▶│   Output    │
-│   (Mic)     │     │  Server      │     │   Engine     │     │  Handler    │
-└─────────────┘     └──────────────┘     └──────────────┘     └─────────────┘
-                           │                     │                     │
-                           ▼                     ▼                     ▼
-                    Transcription          LLM Processing      Clipboard/Notify
+
+### Key Data Flows
+```mermaid
+sequenceDiagram
+    participant User
+    participant Mic as Audio Input
+    participant Whisper
+    participant Context
+    participant LLM
+    participant Output
+    
+    User->>Mic: Speak command
+    Mic->>Whisper: Stream audio
+    Whisper->>Context: Transcribed text
+    Context->>LLM: Enhanced query
+    LLM->>Output: Processed response
+    Output->>User: Notification/Clipboard
 ```
 
 ## Installation
@@ -356,13 +390,38 @@ MIT License - See LICENSE file for details
 - VoyageAI for embeddings
 - Hyprland community for the amazing WM
 
+## Documentation
+
+For detailed technical documentation and future plans see:
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md) - System architecture and design decisions
+- [API_REFERENCE.md](docs/API_REFERENCE.md) - Core module interfaces
+- [DEVELOPER.md](docs/DEVELOPER.md) - Contribution guidelines
+- [FEATURES.md](docs/FEATURES.md) - Roadmap and use cases
+
 ## Support
 
 For issues and questions:
-- GitHub Issues: [Link to repo]
-- Documentation: [Link to docs]
-- Discord: [Link to server]
+- [GitHub Issues](https://github.com/yourorg/hyper-voice/issues)
+- [Documentation](https://yourorg.github.io/hyper-voice/)
+- [Discord Server](https://discord.gg/yourinvite)
 
 ---
 
 **Made with ❤️ for the Hyprland community**
+
+<div align="center">
+  <img src="docs/diagrams/system-overview.png" width="400" alt="System Overview">
+  <img src="docs/diagrams/sequence-flow.png" width="400" alt="Sequence Flow">
+</div>
+- [GitHub Issues](https://github.com/yourorg/hyper-voice/issues)
+- [Documentation](https://yourorg.github.io/hyper-voice/)
+- [Discord Server](https://discord.gg/yourinvite)
+
+---
+
+**Made with ❤️ for the Hyprland community**
+
+<div align="center">
+  <img src="docs/diagrams/system-overview.png" width="400" alt="System Overview">
+  <img src="docs/diagrams/sequence-flow.png" width="400" alt="Sequence Flow">
+</div>

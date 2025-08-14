@@ -65,7 +65,7 @@ class ApplicationProfile:
     """Profile for specific application context"""
     app_name: str
     app_class: Optional[str] = None
-    system_prompt: str = "You are a helpful AI assistant."
+    system_prompt: str = "You are a helpful AI assistant.Who is working as a Voice input parser improve the overall input and inprovise it for better results"
     shortcuts: Dict[str, str] = None
     context_rules: List[str] = None
     patterns: List[str] = None  # Window patterns for matching
@@ -248,9 +248,9 @@ class CogneeContextEngine:
             self.llm = None
     
     async def _load_profiles(self):
-        """Load application profiles from configuration"""
+        """Load application profiles from configuration (supports templates + applications)"""
         try:
-            logger.info(" Loading application profiles...")
+            logger.info("🧩 Loading application profiles...")
             profiles_path = self.config_dir / "app_profiles.yaml"
             if not profiles_path.exists():
                 logger.warning(f"Profile config not found at {profiles_path}")
@@ -265,27 +265,66 @@ class CogneeContextEngine:
                 return
             
             with open(profiles_path) as f:
-                profiles_data = yaml.safe_load(f)
-            
-            for name, profile_data in profiles_data.items():
-                # Extract only the fields that ApplicationProfile expects
+                profiles_data = yaml.safe_load(f) or {}
+
+            # Prefer nested 'applications' section; fallback to legacy top-level mapping
+            applications = profiles_data.get("applications")
+            if not isinstance(applications, dict):
+                applications = {
+                    k: v for k, v in profiles_data.items()
+                    if isinstance(v, dict) and k not in ("templates",)
+                }
+
+            loaded = 0
+            for name, profile_data in applications.items():
+                if not isinstance(profile_data, dict):
+                    continue
+                # Build ApplicationProfile using all known fields; defaults handled by dataclass
                 profile = ApplicationProfile(
                     app_name=name,
-                    patterns=profile_data.get("patterns", []),
-                    context_rules=profile_data.get("context_rules", []),
-                    mcp_tools=profile_data.get("mcp_tools", []),
-                    system_prompt=profile_data.get("system_prompt", "You are a helpful assistant.")
+                    app_class=profile_data.get("app_class"),
+                    system_prompt=(
+                        profile_data.get("system_prompt")
+                        or ApplicationProfile.__dataclass_fields__["system_prompt"].default
+                    ),
+                    shortcuts=profile_data.get("shortcuts") or {},
+                    context_rules=profile_data.get("context_rules") or [],
+                    patterns=profile_data.get("patterns") or [],
+                    mcp_tools=profile_data.get("mcp_tools") or [],
+                    memory_scope=(
+                        profile_data.get("memory_scope")
+                        or ApplicationProfile.__dataclass_fields__["memory_scope"].default
+                    ),
+                    memory_tags=profile_data.get("memory_tags") or [],
+                    context_window_size=int(
+                        profile_data.get("context_window_size")
+                        or ApplicationProfile.__dataclass_fields__["context_window_size"].default
+                    ),
+                    dataset_name=profile_data.get("dataset_name") or f"{name}_dataset",
+                    llm_config=profile_data.get("llm_config") or {},
+                    output_format=(
+                        profile_data.get("output_format")
+                        or ApplicationProfile.__dataclass_fields__["output_format"].default
+                    ),
+                    extra_context=profile_data.get("extra_context") or [],
                 )
-                # Store additional config separately if needed
-                profile.llm_config = profile_data.get("llm_config", {})
-                profile.output_format = profile_data.get("output_format", "text")
-                profile.memory_scope = profile_data.get("memory_scope", "session")
                 self.profiles[name] = profile
-                
-            logger.info(f" Loaded {len(self.profiles)} application profiles with enhanced contexts!")
+                loaded += 1
+
+            # Ensure a robust default fallback profile exists
+            if "default" not in self.profiles:
+                self.profiles["default"] = ApplicationProfile(
+                    app_name="default",
+                    patterns=[],
+                    context_rules=[],
+                    mcp_tools=[],
+                    system_prompt="You are a helpful assistant."
+                )
+            
+            logger.info(f"✅ Loaded {loaded} application profiles (plus default fallback)")
             
         except Exception as e:
-            logger.error(f" Failed to load MCP tools: {e}")
+            logger.error(f"❌ Failed to load profiles: {e}")
             # Create default profile on error
             self.profiles["default"] = ApplicationProfile(
                 app_name="default",
@@ -334,6 +373,16 @@ class CogneeContextEngine:
                     break
             else:
                 self.current_profile = self.profiles.get("default")
+                if not self.current_profile:
+                    # Final safety fallback
+                    self.current_profile = ApplicationProfile(
+                        app_name="default",
+                        patterns=[],
+                        context_rules=[],
+                        mcp_tools=[],
+                        system_prompt="You are a helpful assistant."
+                    )
+                    self.profiles["default"] = self.current_profile
         
         logger.info(f"Active profile: {self.current_profile.app_name}")
         return self.current_profile

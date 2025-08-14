@@ -6,14 +6,12 @@ Manages multi-provider LLM orchestration with MCP tools integration
 
 import os
 import asyncio
-from typing import Dict, List, Optional, Any, Union, Callable
+from typing import Dict, List, Optional, Any, Callable
 from dataclasses import dataclass
 from enum import Enum
-import json
 from pathlib import Path
 
 from loguru import logger
-from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
 # LLM Provider imports
@@ -21,7 +19,7 @@ from langchain_xai import ChatXAI
 from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
 from langchain_ollama import OllamaLLM
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, BaseMessage
 from langchain_core.tools import Tool
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain_core.prompts import PromptTemplate
@@ -248,31 +246,60 @@ class AgentOrchestrator:
                 logger.info(f"Attempting generation with provider: {provider_name}")
                 
                 llm = self.providers[provider_name]
-                messages = []
-                
+                messages: List[BaseMessage] = []
+
+                # Build message sequence: system -> history -> current prompt
                 if system_prompt:
                     messages.append(SystemMessage(content=system_prompt))
-                
-                messages.append(HumanMessage(content=prompt))
-                
-                # Add conversation history if needed
+
                 if kwargs.get("use_history", False) and self.conversation_history:
-                    for msg in self.conversation_history[-5:]:  # Last 5 messages
+                    history_limit = int(os.getenv("AGENT_HISTORY_LIMIT", "10"))
+                    for msg in self.conversation_history[-history_limit:]:
                         if msg["role"] == "user":
                             messages.append(HumanMessage(content=msg["content"]))
                         else:
                             messages.append(AIMessage(content=msg["content"]))
-                
-                # Generate response
-                if use_tools and self.mcp_executor.tools:
-                    response = await self._generate_with_tools(llm, messages, **kwargs)
-                else:
-                    response = await llm.ainvoke(messages)
-                    response = response.content if hasattr(response, 'content') else str(response)
-                
+
+                messages.append(HumanMessage(content=prompt))
+
+                # Provider config for timeouts/retries
+                config = self.provider_configs.get(provider_name)
+                retries = max(1, getattr(config, "retry_count", 1)) if config else 1
+                timeout_s = getattr(config, "timeout", 0) if config else 0
+
+                last_err: Optional[Exception] = None
+                for attempt in range(retries):
+                    try:
+                        # Generate response
+                        if use_tools and self.mcp_executor.tools:
+                            response = await self._generate_with_tools(
+                                llm, messages, input_text=prompt, **kwargs
+                            )
+                        else:
+                            coro = llm.ainvoke(messages)
+                            if timeout_s and timeout_s > 0:
+                                result = await asyncio.wait_for(coro, timeout=timeout_s)
+                            else:
+                                result = await coro
+                            response = result.content if hasattr(result, 'content') else str(result)
+                        last_err = None
+                        break
+                    except Exception as e:
+                        last_err = e
+                        if attempt < retries - 1:
+                            backoff = 2 ** attempt
+                            logger.warning(f"Attempt {attempt+1}/{retries} failed on {provider_name}: {e}. Retrying in {backoff}s...")
+                            await asyncio.sleep(backoff)
+                        else:
+                            raise
+
                 # Update conversation history
                 self.conversation_history.append({"role": "user", "content": prompt})
                 self.conversation_history.append({"role": "assistant", "content": response})
+                # Trim history
+                max_history = int(os.getenv("AGENT_HISTORY_LIMIT", "20"))
+                if max_history > 0 and len(self.conversation_history) > max_history:
+                    self.conversation_history = self.conversation_history[-max_history:]
                 
                 self.current_provider = provider_name
                 logger.info(f"Successfully generated response with {provider_name}")
@@ -329,7 +356,9 @@ Thought: {agent_scratchpad}"""
         )
         
         # Execute agent
-        result = await agent_executor.ainvoke({"input": messages[-1].content})
+        input_text = kwargs.get("input_text")
+        query = input_text if input_text is not None else (messages[-1].content if messages else "")
+        result = await agent_executor.ainvoke({"input": query})
         return result.get("output", "")
     
     def _get_available_providers(self, preferred: Optional[str] = None) -> List[str]:

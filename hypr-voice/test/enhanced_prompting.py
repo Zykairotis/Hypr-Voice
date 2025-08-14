@@ -4,14 +4,18 @@ Optimized for xAI + VoyageAI + Cognee + LanceDB integration
 """
 
 import asyncio
+import contextlib
 import json
 import logging
+import os
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Any
 from datetime import datetime
+import time
 import yaml
 import hashlib
 import uuid
+from collections import OrderedDict
 
 import lancedb
 from lancedb.embeddings import get_registry
@@ -59,10 +63,39 @@ class EnhancedPromptingPipeline:
         self.db = lancedb.connect(lancedb_path)
         registry = get_registry()
         logger.info("🚀 Setting up VoyageAI embeddings (voyage-code-3)")
+        self._embedding_model_name = "voyage-code-3"
+        voyage_api_key = os.getenv("VOYAGE_API_KEY", "")
+        if not voyage_api_key:
+            logger.warning("VOYAGE_API_KEY is not set; embedding calls will fail")
         self.embedding_func = registry.get("voyage").create(
-            model_name="voyage-code-3",  # Optimized for code/technical content
-            api_key="${VOYAGE_API_KEY}"
+            model_name=self._embedding_model_name,  # Optimized for code/technical content
+            api_key=voyage_api_key,
         )
+        # In-memory LRU caches for speed
+        self._qe_cache_max = int(os.getenv("VOYAGE_CACHE_SIZE", "512"))
+        self._qe_cache: OrderedDict[str, List[float]] = OrderedDict()
+        # Runtime context settings & cache
+        self._disable_runtime_context = os.getenv("HYPR_DISABLE_RUNTIME_CONTEXT", "0").strip().lower() in {"1", "true", "yes"}
+        try:
+            self._rt_ttl = float(os.getenv("RUNTIME_CONTEXT_TTL", "5.0"))
+        except Exception:
+            self._rt_ttl = 5.0
+        try:
+            self._rt_timeout = float(os.getenv("RUNTIME_CONTEXT_TIMEOUT", "1.5"))
+        except Exception:
+            self._rt_timeout = 1.5
+        try:
+            self._rt_max_conc = int(os.getenv("RUNTIME_CONTEXT_MAX_CONCURRENCY", "3"))
+        except Exception:
+            self._rt_max_conc = 3
+        try:
+            self._rt_max_chars = int(os.getenv("RUNTIME_CONTEXT_MAX_CHARS", "512"))
+        except Exception:
+            self._rt_max_chars = 512
+        self._rt_cache: Dict[str, Dict[str, Any]] = {}
+        self._rt_cache_time: Dict[str, float] = {}
+        # Table rebuild toggle
+        self._rebuild_tables = os.getenv("HYPR_REBUILD_TABLES", "0").strip().lower() in {"1", "true", "yes"}
         
         # Load configurations
         logger.info("📄 Loading configuration files...")
@@ -264,12 +297,15 @@ class EnhancedPromptingPipeline:
             })
         
         app_df = pd.DataFrame(app_data)
-        try:
-            self.app_table = self.db.open_table("app_lookup")
-            self.db.drop_table("app_lookup")
-        except:
-            pass
-        
+        # Optionally skip rebuilding table for faster startup
+        if not self._rebuild_tables:
+            try:
+                self.app_table = self.db.open_table("app_lookup")
+                logger.info("✅ Opened existing app_lookup table (skipped rebuild)")
+                return
+            except Exception:
+                pass
+        # Rebuild table
         self.app_table = self.db.create_table("app_lookup", app_df, mode="overwrite")
     
     def _create_mcp_tools_table(self):
@@ -337,16 +373,18 @@ class EnhancedPromptingPipeline:
             })
         
         if mcp_data:
+            # Optionally skip rebuilding table for faster startup
+            if not self._rebuild_tables:
+                try:
+                    self.mcp_table = self.db.open_table("mcp_tools")
+                    logger.info("✅ Opened existing mcp_tools table (skipped rebuild)")
+                    return
+                except Exception:
+                    pass
             mcp_df = pd.DataFrame(mcp_data)
             # Add embeddings for semantic search
             mcp_df['vector'] = self.embedding_func.compute_source_embeddings(mcp_df['content'].tolist())
-            
-            try:
-                self.mcp_table = self.db.open_table("mcp_tools")
-                self.db.drop_table("mcp_tools")
-            except:
-                pass
-            
+            # Overwrite in-place (no explicit drop to avoid slow startup)
             self.mcp_table = self.db.create_table("mcp_tools", mcp_df, mode="overwrite")
             logger.info(f"🛠️  Created MCP tools table with {len(mcp_data)} servers and embeddings")
         else:
@@ -362,14 +400,16 @@ class EnhancedPromptingPipeline:
         # 1. Get app-specific configuration
         app_config = self._get_app_config(app_profile)
         
-        # 2. Semantic search for relevant context
-        semantic_context = await self._semantic_search(query, app_profile, limit=5)
+        # Pre-compute query embedding once and reuse
+        query_vector = self._get_query_embedding(query)
         
-        # 3. Get runtime context from extra_context commands
-        runtime_context = await self._get_runtime_context(app_profile, extra_runtime_context)
-        
-        # 4. Retrieve relevant knowledge from Cognee
-        cognee_context = await self._get_cognee_context(query, app_profile)
+        # 2-4. Run concurrent tasks for speed
+        semantic_task = self._semantic_search(query, app_profile, limit=5, query_vector=query_vector)
+        runtime_task = self._get_runtime_context(app_profile, extra_runtime_context)
+        cognee_task = self._get_cognee_context(query, app_profile, query_vector=query_vector)
+        semantic_context, runtime_context, cognee_context = await asyncio.gather(
+            semantic_task, runtime_task, cognee_task
+        )
         
         # 5. Build enhanced prompt structure
         enhanced_context = {
@@ -381,11 +421,91 @@ class EnhancedPromptingPipeline:
             'query_metadata': {
                 'timestamp': datetime.now().isoformat(),
                 'app_profile': app_profile,
-                'query_embedding': self.embedding_func.compute_query_embeddings([query])[0].tolist()
+                'query_embedding': self._to_list(query_vector)
             }
         }
         
         return enhanced_context
+
+    async def _get_runtime_context(self, app_profile: str, extra_runtime_context: Optional[Dict] = None) -> Dict[str, Any]:
+        """Collect lightweight runtime context by executing profile commands concurrently.
+        - Respects HYPR_DISABLE_RUNTIME_CONTEXT.
+        - Uses TTL cache per app_profile to avoid frequent re-execution.
+        - Limits concurrency and per-command runtime via env knobs.
+        """
+        now = time.time()
+        base_ctx: Dict[str, Any] = {"timestamp": datetime.now().isoformat()}
+        # Merge any provided extra context first
+        if extra_runtime_context:
+            base_ctx.update({k: v for k, v in extra_runtime_context.items() if v})
+
+        if self._disable_runtime_context:
+            logger.debug("HYPR_DISABLE_RUNTIME_CONTEXT=1 -> skipping extra_context commands")
+            return base_ctx
+
+        # TTL cache per app profile
+        last_t = self._rt_cache_time.get(app_profile)
+        if last_t is not None and (now - last_t) < self._rt_ttl:
+            cached = self._rt_cache.get(app_profile, {}).copy()
+            cached.update(base_ctx)
+            return cached
+
+        # Resolve commands from app table/config
+        try:
+            app_cfg = self._get_app_config(app_profile)
+            extra_cmds = app_cfg.get('extra_context', []) or []
+        except Exception:
+            extra_cmds = []
+
+        if not extra_cmds:
+            self._rt_cache[app_profile] = base_ctx
+            self._rt_cache_time[app_profile] = now
+            return base_ctx
+
+        sem = asyncio.Semaphore(max(1, self._rt_max_conc))
+
+        async def _run_cmd(idx: int, spec: Any) -> tuple[str, str]:
+            # spec can be a string shell command or dict with {name, cmd}
+            if isinstance(spec, dict):
+                name = spec.get('name') or spec.get('label') or f"cmd_{idx}"
+                cmd = spec.get('cmd') or spec.get('command') or ''
+            else:
+                name = f"cmd_{idx}"
+                cmd = str(spec)
+            if not cmd:
+                return name, ''
+            async with sem:
+                try:
+                    proc = await asyncio.create_subprocess_shell(
+                        cmd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
+                    try:
+                        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=self._rt_timeout)
+                    except asyncio.TimeoutError:
+                        with contextlib.suppress(ProcessLookupError):
+                            proc.kill()
+                        return name, ''
+                    out = (stdout or b'').decode(errors='ignore').strip()
+                    if len(out) > self._rt_max_chars:
+                        out = out[: self._rt_max_chars]
+                    return name, out
+                except Exception:
+                    return name, ''
+
+        tasks = [asyncio.create_task(_run_cmd(i, spec)) for i, spec in enumerate(extra_cmds)]
+        results = await asyncio.gather(*tasks, return_exceptions=False)
+
+        ctx = base_ctx.copy()
+        for name, val in results:
+            if val:
+                ctx[name] = val
+
+        # Update cache
+        self._rt_cache[app_profile] = ctx
+        self._rt_cache_time[app_profile] = now
+        return ctx
     
     def _get_app_config(self, app_profile: str) -> Dict:
         """Get app-specific configuration from lookup table"""
@@ -403,11 +523,12 @@ class EnhancedPromptingPipeline:
         # Fallback to default
         return self.app_profiles.get('default', {})
     
-    async def _semantic_search(self, query: str, app_profile: str, limit: int = 5) -> List[Dict]:
+    async def _semantic_search(self, query: str, app_profile: str, limit: int = 5, query_vector: Optional[Any] = None) -> List[Dict]:
         """Perform semantic search for relevant context"""
         try:
-            # Create query embedding
-            query_vector = self.embedding_func.compute_query_embeddings([query])[0]
+            # Use precomputed embedding if provided
+            if query_vector is None:
+                query_vector = self._get_query_embedding(query)
             
             # Search with filters for relevance
             results = (
@@ -483,10 +604,11 @@ class EnhancedPromptingPipeline:
         except Exception as e:
             logger.error(f"Failed to store Cognee memory: {e}")
     
-    async def search_cognee_memories(self, query: str, app_profile: str = None, limit: int = 5) -> List[Dict]:
+    async def search_cognee_memories(self, query: str, app_profile: str = None, limit: int = 5, query_vector: Optional[Any] = None) -> List[Dict]:
         """Search Cognee memories using semantic similarity"""
         try:
-            query_vector = self.embedding_func.compute_query_embeddings([query])[0]
+            if query_vector is None:
+                query_vector = self._get_query_embedding(query)
             
             search_query = self.cognee_table.search(query_vector)
             
@@ -516,13 +638,14 @@ class EnhancedPromptingPipeline:
         
         return []
     
-    async def get_mcp_tools_for_context(self, query: str, app_profile: str = None, limit: int = 3) -> List[Dict]:
+    async def get_mcp_tools_for_context(self, query: str, app_profile: str = None, limit: int = 3, query_vector: Optional[Any] = None) -> List[Dict]:
         """Get relevant MCP tools based on query context"""
         try:
             if not hasattr(self, 'mcp_table'):
                 return []
-                
-            query_vector = self.embedding_func.compute_query_embeddings([query])[0]
+            
+            if query_vector is None:
+                query_vector = self._get_query_embedding(query)
             
             results = (
                 self.mcp_table
@@ -550,9 +673,13 @@ class EnhancedPromptingPipeline:
         return []
     
     async def _get_runtime_context(self, app_profile: str, extra_context: Optional[Dict] = None) -> Dict:
-        """Execute extra_context commands for runtime information"""
+        """Execute extra_context commands for runtime information (non-blocking)"""
         runtime_data = {'timestamp': datetime.now().isoformat()}
         
+        # Allow disabling runtime context for speed
+        if os.getenv("HYPR_DISABLE_RUNTIME_CONTEXT", "false").lower() in {"1", "true", "yes"}:
+            return runtime_data
+
         if extra_context:
             runtime_data.update(extra_context)
         
@@ -560,31 +687,45 @@ class EnhancedPromptingPipeline:
         app_config = self.app_profiles.get(app_profile, {})
         extra_commands = app_config.get('extra_context', [])
         
-        import subprocess
-        for cmd in extra_commands:
+        async def run_cmd(cmd: str) -> tuple[str, str]:
             try:
-                result = subprocess.run(
-                    cmd, 
-                    shell=True, 
-                    capture_output=True, 
-                    text=True, 
-                    timeout=5
+                proc = await asyncio.create_subprocess_shell(
+                    cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
                 )
-                if result.returncode == 0:
-                    runtime_data[f'cmd_{hash(cmd) % 1000}'] = result.stdout.strip()
-            except Exception as e:
-                logger.debug(f"Runtime command failed: {cmd} - {e}")
+                try:
+                    stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=3.0)
+                except asyncio.TimeoutError:
+                    with contextlib.suppress(ProcessLookupError):
+                        proc.kill()
+                    return (cmd, "")
+                out = stdout.decode().strip() if stdout else ""
+                return (cmd, out)
+            except Exception:
+                return (cmd, "")
+        
+        if extra_commands:
+            # Limit concurrency to avoid overload
+            sem = asyncio.Semaphore(4)
+            async def guarded(c: str) -> tuple[str, str]:
+                async with sem:
+                    return await run_cmd(c)
+            results = await asyncio.gather(*(guarded(c) for c in extra_commands), return_exceptions=False)
+            for cmd, out in results:
+                if out:
+                    runtime_data[f'cmd_{hash(cmd) % 1000}'] = out
         
         return runtime_data
     
-    async def _get_cognee_context(self, query: str, app_profile: str) -> Dict:
+    async def _get_cognee_context(self, query: str, app_profile: str, query_vector: Optional[Any] = None) -> Dict:
         """Retrieve relevant context from Cognee knowledge graph via LanceDB"""
         try:
             # Search Cognee memories
-            memories = await self.search_cognee_memories(query, app_profile, limit=5)
+            memories = await self.search_cognee_memories(query, app_profile, limit=5, query_vector=query_vector)
             
             # Get relevant MCP tools
-            mcp_tools = await self.get_mcp_tools_for_context(query, app_profile, limit=3)
+            mcp_tools = await self.get_mcp_tools_for_context(query, app_profile, limit=3, query_vector=query_vector)
             
             return {
                 'retrieved_memories': memories,
@@ -604,6 +745,32 @@ class EnhancedPromptingPipeline:
                 'memory_count': 0,
                 'tools_count': 0
             }
+
+    # === Embedding cache helpers ===
+    def _get_query_embedding(self, query: str) -> np.ndarray:
+        """Return cached VoyageAI embedding for a query, computing if missing."""
+        key = f"{self._embedding_model_name}|{query.strip()}"
+        if key in self._qe_cache:
+            vec = self._qe_cache.pop(key)
+            self._qe_cache[key] = vec  # move to end (most recent)
+            return np.asarray(vec, dtype=float)
+        vec = self.embedding_func.compute_query_embeddings([query])[0]
+        vec = np.asarray(vec, dtype=float)
+        # Store as list to reduce memory footprint when pickled
+        self._qe_cache[key] = vec.tolist()
+        # Enforce LRU size
+        if len(self._qe_cache) > self._qe_cache_max:
+            self._qe_cache.popitem(last=False)
+        return vec
+
+    def _to_list(self, vec: Any) -> List[float]:
+        """Safely convert numpy array or iterable to a plain list[float]."""
+        if vec is None:
+            return []
+        try:
+            return vec.tolist()
+        except AttributeError:
+            return list(vec)
     
     def build_enhanced_prompt(self, enhanced_context: Dict[str, Any]) -> str:
         """Build optimized prompt for xAI with all contextual information"""
