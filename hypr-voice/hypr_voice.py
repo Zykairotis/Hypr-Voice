@@ -39,6 +39,7 @@ import time
 from pathlib import Path
 from typing import Optional, Dict, Any, cast
 from datetime import datetime
+from enum import Enum
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
@@ -52,6 +53,12 @@ import socket
 
 # Load environment variables
 load_dotenv()
+
+
+class ProcessingMode(Enum):
+    """Processing mode enumeration"""
+    RAW = "raw"
+    ENHANCED = "enhanced"
 
 class HyprVoice:
     """
@@ -96,6 +103,10 @@ class HyprVoice:
         self.context_engine: Optional[Any] = None
         self.whisper_server_url = os.getenv("WHISPER_SERVER_URL", "http://localhost:9880")
         self.current_app: Optional[str] = None
+        
+        # Processing mode support
+        self.processing_mode: ProcessingMode = ProcessingMode.ENHANCED
+        self.raw_processor: Optional[Any] = None
         
         # Recording state
         self.is_recording: bool = False
@@ -214,6 +225,138 @@ class HyprVoice:
             logger.warning(f"CogneeContextEngine unavailable: {e_cognee}")
             self.context_engine = None
             return False
+    
+    async def _ensure_raw_processor(self) -> bool:
+        """
+        Ensure a raw transcription processor is initialized for raw mode.
+        
+        Returns:
+            bool: True if raw processor was successfully initialized
+        """
+        if self.raw_processor is not None:
+            return True
+        
+        try:
+            from raw_transcription_processor import RawTranscriptionProcessor, RawModeConfig
+            
+            # Load raw mode config from audio config
+            raw_config_dict = self.audio_config.get('raw_mode', {})
+            raw_config = RawModeConfig(
+                enabled=raw_config_dict.get('enabled', True),
+                max_processing_time_ms=raw_config_dict.get('max_processing_time_ms', 500),
+                silence_detection_enabled=raw_config_dict.get('silence_detection', {}).get('enabled', True),
+                silence_threshold=raw_config_dict.get('silence_detection', {}).get('threshold', 0.01),
+                silence_duration=raw_config_dict.get('silence_detection', {}).get('duration', 2.0),
+                output_format=raw_config_dict.get('output', {}).get('format', 'text'),
+                save_audio_files=raw_config_dict.get('output', {}).get('save_files', False),
+                whisper_timeout=raw_config_dict.get('whisper_timeout', 10.0),
+                max_retries=raw_config_dict.get('max_retries', 2)
+            )
+            
+            self.raw_processor = RawTranscriptionProcessor(
+                whisper_server_url=self.whisper_server_url,
+                audio_config=self.audio_config,
+                raw_config=raw_config
+            )
+            
+            logger.info("Initialized RawTranscriptionProcessor")
+            return True
+            
+        except Exception as e:
+            logger.warning(f"RawTranscriptionProcessor unavailable: {e}")
+            self.raw_processor = None
+            return False
+    
+    def set_processing_mode(self, mode: ProcessingMode) -> None:
+        """Set the current processing mode"""
+        self.processing_mode = mode
+        mode_name = mode.value
+        logger.info(f"Processing mode set to: {mode_name}")
+        
+        # Show notification
+        if mode == ProcessingMode.RAW:
+            self.notify("Raw Mode", "Fast transcription enabled (200-500ms)", urgency="low")
+        else:
+            self.notify("Enhanced Mode", "AI-powered transcription enabled", urgency="low")
+    
+    async def process_audio_with_mode(self, audio_data, sample_rate: int) -> Optional[str]:
+        """
+        Route audio processing based on current mode
+        
+        Args:
+            audio_data: Raw audio data as numpy array
+            sample_rate: Sample rate of audio data
+            
+        Returns:
+            Processed text or None if processing failed
+        """
+        if self.processing_mode == ProcessingMode.RAW:
+            return await self._process_raw_mode(audio_data, sample_rate)
+        else:
+            return await self._process_enhanced_mode(audio_data, sample_rate)
+    
+    async def _process_raw_mode(self, audio_data, sample_rate: int) -> Optional[str]:
+        """Process audio in raw mode (fast, no enhancement)"""
+        try:
+            if not await self._ensure_raw_processor():
+                logger.error("Raw processor not available, falling back to enhanced mode")
+                return await self._process_enhanced_mode(audio_data, sample_rate)
+            
+            logger.info("🚀 Processing in RAW mode")
+            result = await self.raw_processor.process_raw_transcription(audio_data, sample_rate)
+            
+            if result.error:
+                logger.error(f"Raw processing failed: {result.error}")
+                return None
+            
+            # Log performance
+            logger.info(f"✅ Raw processing completed: {result.processing_time_ms}ms")
+            
+            # Show notification with timing info
+            self.notify(
+                "🚀 Raw Transcription",
+                f"{result.text[:100]}{'...' if len(result.text) > 100 else ''} ({result.processing_time_ms}ms)",
+                urgency="low"
+            )
+            
+            return result.text
+            
+        except Exception as e:
+            logger.error(f"Raw mode processing failed: {e}")
+            return None
+    
+    async def _process_enhanced_mode(self, audio_data, sample_rate: int) -> Optional[str]:
+        """Process audio in enhanced mode (slower, with AI improvement)"""
+        try:
+            logger.info("🧠 Processing in ENHANCED mode")
+            
+            # Save audio file and process through existing pipeline
+            import numpy as np
+            import soundfile as sf
+            from datetime import datetime
+            
+            # Convert to mono and normalize
+            mono = self._to_mono(audio_data).astype('float32')
+            if (self.actual_dtype or self.input_dtype) == 'int16':
+                mono = mono / 32768.0
+            
+            # Resample if needed
+            target_sr = int(getattr(self, 'whisper_target_rate', 16000))
+            if sample_rate != target_sr:
+                mono = self._resample_audio(mono, sample_rate, target_sr)
+            
+            # Save recording
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
+            recording_path = self.recordings_dir / f"recording_{timestamp}.wav"
+            sf.write(str(recording_path), mono, target_sr)
+            
+            # Process through existing enhanced pipeline
+            await self.transcribe_audio_file(str(recording_path))
+            return None  # transcribe_audio_file handles the rest
+            
+        except Exception as e:
+            logger.error(f"Enhanced mode processing failed: {e}")
+            return None
     
     async def initialize(self) -> None:
         """
@@ -726,30 +869,18 @@ class HyprVoice:
             dur = frames / sr if sr else 0.0
             logger.info(f"Captured frames={frames}, samplerate={sr}, duration={dur:.2f}s, chunks={len(self.recording_audio)}")
             
-            # Convert to mono 1D float32
-            mono = self._to_mono(audio_data).astype('float32')
+            # Process audio based on current mode
+            result = await self.process_audio_with_mode(audio_data, sr)
             
-            # Normalize if original capture was int16
-            if (self.actual_dtype or self.input_dtype) == 'int16':
-                mono = mono / 32768.0
-            
-            # Resample to target rate if necessary
-            target_sr = int(getattr(self, 'whisper_target_rate', 16000))
-            if sr and sr != target_sr:
-                mono = self._resample_audio(mono, sr, target_sr)
-            
-            # Create debug directory if it doesn't exist
-            recordings_dir = Path(__file__).parent / "recordings"
-            recordings_dir.mkdir(exist_ok=True)
-            
-            # Save recording with timestamp
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]  # Include milliseconds
-            recording_path = recordings_dir / f"recording_{timestamp}.wav"
-            sf.write(str(recording_path), mono, target_sr)
-            logger.info(f"Saved recording to {recording_path}")
-            
-            # Send to transcription server
-            await self.transcribe_audio_file(str(recording_path))
+            # Handle raw mode result (enhanced mode is handled in transcribe_audio_file)
+            if self.processing_mode == ProcessingMode.RAW and result:
+                # For raw mode, we get the text directly and need to handle clipboard/paste
+                if os.getenv("AUTO_PASTE", "false").lower() == "true":
+                    self.paste_to_cursor(result)
+                else:
+                    self.copy_to_clipboard(result)
+                
+                return result
             
         except Exception as e:
             logger.error(f"Failed to process recording: {e}")
@@ -1023,6 +1154,56 @@ class HyprVoice:
                                 except:
                                     pass  # Don't block on send
                                 asyncio.create_task(self.start_recording())  # Non-blocking
+                            else:
+                                try:
+                                    conn.send(b"ALREADY_RECORDING")
+                                except:
+                                    pass
+                            last_start_time = current_time
+                        else:
+                            try:
+                                conn.send(b"DEBOUNCED")
+                            except:
+                                pass
+                    
+                    elif data == "START_RAW":
+                        # Start recording in raw mode
+                        if current_time - last_start_time > 0.1:  # 100ms debounce
+                            logger.info("=== IPC: START_RAW command ===")
+                            if not self.is_recording:
+                                # Set raw mode and start recording
+                                self.set_processing_mode(ProcessingMode.RAW)
+                                try:
+                                    conn.setblocking(False)
+                                    conn.send(b"OK")
+                                except:
+                                    pass
+                                asyncio.create_task(self.start_recording())
+                            else:
+                                try:
+                                    conn.send(b"ALREADY_RECORDING")
+                                except:
+                                    pass
+                            last_start_time = current_time
+                        else:
+                            try:
+                                conn.send(b"DEBOUNCED")
+                            except:
+                                pass
+                    
+                    elif data == "START_ENHANCED":
+                        # Start recording in enhanced mode
+                        if current_time - last_start_time > 0.1:  # 100ms debounce
+                            logger.info("=== IPC: START_ENHANCED command ===")
+                            if not self.is_recording:
+                                # Set enhanced mode and start recording
+                                self.set_processing_mode(ProcessingMode.ENHANCED)
+                                try:
+                                    conn.setblocking(False)
+                                    conn.send(b"OK")
+                                except:
+                                    pass
+                                asyncio.create_task(self.start_recording())
                             else:
                                 try:
                                     conn.send(b"ALREADY_RECORDING")

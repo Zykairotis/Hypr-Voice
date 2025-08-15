@@ -71,3 +71,40 @@ audio:
     originals_dir: "recordings/originals"
     # Directory for processed/downsampled files
     processed_dir: "recordings/processed"
+  
+  # Raw transcription mode settings
+  raw_mode:
+    # Enable raw transcription mode
+    enabled: true
+    # Maximum processing time target (milliseconds)
+    max_processing_time_ms: 500
+    # Whisper server timeout for raw mode
+    whisper_timeout: 10.0
+    # Maximum retries for failed requests
+    max_retries: 2
+    
+    # Silence detection settings
+    silence_detection:
+      enabled: true
+      # Silence threshold (0.0 to 1.0)
+      threshold: 0.01
+      # Duration of silence before stopping (seconds)
+      duration: 2.0
+    
+    # Output settings
+    output:
+      # Output format: text or json
+      format: "text"
+      # Save processed audio files for debugging
+      save_files: false
+      # Directory for raw mode audio files
+      directory: "recordings/raw"
+    
+    # Performance settings
+    performance:
+      # Use streaming processing for better performance
+      use_streaming: true
+      # Audio chunk size for processing
+      chunk_size: 4096
+      # Maximum concurrent requests to Whisper server
+      max_concurrent_requests: 4
