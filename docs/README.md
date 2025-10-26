@@ -1,85 +1,233 @@
-# 📚 Hypr-Voice Documentation Index
+# 🎤 Hypr-Voice
 
-Welcome to comprehensive documentation for Hypr-Voice, the context-aware voice input system for Hyprland.
+A sophisticated context-aware voice input system for Arch Linux with Hyprland, featuring intelligent transcription and AI-enhanced text processing.
 
-## 🚀 Quick Navigation
+## ✨ Key Features
 
-### 🎯 New Users
-- **[📖 Installation Guide](installation/START_HERE.md)** - Complete setup instructions
-- **[⚡ Quick Start](installation/quick-start.md)** - Up and running in 5 minutes
-- **[✅ Installation Checklist](installation/installation-checklist.md)** - Step-by-step verification
+### 🎯 Core Capabilities
+- **Real-time Voice Transcription** using WhisperLive with Voice Activity Detection
+- **Context-Aware Processing** with per-application profiles
+- **Multi-Provider LLM Support** (xAI/Grok, OpenAI, Anthropic, Ollama)
+- **Intelligent Memory System** using Cognee for persistent context
+- **Hyprland Integration** with automatic window detection
+- **Clipboard & Notification Actions** for seamless workflow
 
-### 🛠️ User Guides
-- **[🎤 Enhanced Mode Guide](user/enhanced-mode-guide.md)** - F9/F10 modes with SG-Lang integration
-- **[🔧 Setup Guide](user/setup-guide.md)** - Comprehensive configuration reference
-- **[🎮 Keybinds Guide](user/keybinds-guide.md)** - All keyboard shortcuts
-- **[🎪 Audio Level Visualization](user/audio-level-visualization.md)** - Real-time audio feedback
+### 🚀 Advanced Features
+- **Push-to-Talk & Continuous Modes** for flexible input
+- **Application Profiles** for context-specific text improvement
+- **Memory Persistence** across sessions using semantic knowledge graphs
+- **Multi-Language Support** with Whisper
+- **GPU Acceleration** with CUDA support
+- **WebSocket Streaming** for low-latency communication
+- **Audio Level Visualization** for real-time feedback
+- **Smart Paste Detection** for all applications (including Electron apps)
 
-### ⚡ Feature Documentation
-- **[📋 Clipboard Paste Fix](features/paste-fix.md)** - Universal paste support for all apps
-- **[🔧 Paste Troubleshooting](features/paste-troubleshooting.md)** - Paste-specific issues
-- **[🧠 Memory System](features/memory-system.md)** - Context memory with Cognee
-- **[🌐 Multi-Language Support](features/multilingual.md)** - Language capabilities
-
-### 🔧 Technical Documentation
-- **[📊 Implementation Summary](technical/implementation-summary.md)** - Technical overview
-- **[⚡ Optimization Summary](technical/OPTIMIZATION_SUMMARY.md)** - Performance improvements
-- **[🏗️ Architecture](technical/architecture.md)** - System design and components
-- **[🔌 API Reference](technical/api-reference.md)** - API documentation
-- **[📜 Scripts Overview](technical/scripts-overview.md)** - Available utility scripts
-
-### 🌐 Web Interface
-- **[🎨 Web UI Guide](webui/WEB_UI_README.md)** - Web interface documentation
-
-### 🔍 Troubleshooting
-- **[🚨 Common Issues](troubleshooting/common-issues.md)** - Frequently encountered problems
-- **[🎪 Audio Issues](troubleshooting/audio-issues.md)** - Microphone and sound problems
-- **[🔗 Integration Issues](troubleshooting/integration-issues.md)** - Application-specific problems
-
-### 📋 Configuration Reference
-- **[⚙️ Audio Configuration](configuration/audio-config.md)** - Audio device settings
-- **[🎭 Application Profiles](configuration/app-profiles.md)** - Per-app configuration
-- **[🤖 LLM Providers](configuration/llm-providers.md)** - AI service setup
-
-## 🎯 Documentation Structure
+## 🏗️ Architecture
 
 ```
-docs/
-├── README.md                    # This file - documentation index
-├── installation/                # Getting started guides
-├── user/                       # User guides and features
-├── features/                    # Feature-specific documentation
-├── technical/                   # Technical documentation
-├── webui/                      # Web interface docs
-├── troubleshooting/              # Issue resolution guides
-└── configuration/               # Configuration reference
+┌─────────────┐     ┌──────────────┐     ┌──────────────┐     ┌─────────────┐
+│ Audio Input │────▶│ WhisperLive  │────▶│   Context    │────▶│   Output    │
+│   (Mic)     │     │  Server      │     │   Engine     │     │  Handler    │
+└─────────────┘     └──────────────┘     └──────────────┘     └─────────────┘
+                           │                     │                     │
+                           ▼                     ▼                     ▼
+                    Transcription          LLM Processing      Clipboard/Notify
 ```
 
-## 🎯 Reading Paths
+## 🚀 Quick Start
 
-### For New Users
-1. **[Installation Guide](installation/START_HERE.md)** - Begin here
-2. **[Quick Start](installation/quick-start.md)** - Fast setup
-3. **[Enhanced Mode Guide](user/enhanced-mode-guide.md)** - Learn modes
+### Prerequisites
+- Arch Linux with Hyprland
+- Python 3.10+
+- Microphone (USB or Bluetooth)
 
-### For Advanced Users
-1. **[Architecture](technical/architecture.md)** - System design
-2. **[Implementation Summary](technical/implementation-summary.md)** - Technical details
-3. **[Configuration Reference](configuration/)** - All configuration options
+### Installation (One Command)
+```bash
+cd hypr-voice
+./scripts/install_deps.sh
+```
 
-### For Troubleshooting
-1. **[Common Issues](troubleshooting/common-issues.md)** - Most problems
-2. **[Audio Issues](troubleshooting/audio-issues.md)** - Sound problems
-3. **[Integration Issues](troubleshooting/integration-issues.md)** - App-specific issues
+### Basic Usage
+```bash
+# Start Hypr-Voice
+./scripts/run_hypr_voice.sh start
 
-## 📞 Getting Help
+# Use it
+ Hold F9 → Speak → Release key → Text appears!
 
-- **Check this documentation** - Most questions are answered here
-- **Run diagnostics** - `./scripts/debug_setup.sh` for system checks
-- **Review logs** - Check application logs for errors
-- **Community support** - GitHub issues and discussions
+# Check status
+./scripts/run_hypr_voice.sh status
+```
+
+### Keybinds
+- **F9**: Hold to record, release to transcribe & paste
+- **SUPER + F9**: Show system status
+- **SUPER + SHIFT + F9**: Emergency stop
+
+## 📖 Documentation
+
+### 📚 Getting Started
+- **[Installation Guide](hypr-voice/docs/installation/START_HERE.md)** - Complete setup instructions
+- **[Quick Start](hypr-voice/docs/installation/quick-start.md)** - Up and running in 5 minutes
+- **[Installation Checklist](hypr-voice/docs/installation/installation-checklist.md)** - Step-by-step verification
+
+### 🛠️ Configuration & Usage
+- **[Setup Guide](hypr-voice/docs/guides/setup-guide.md)** - Comprehensive configuration reference
+- **[Troubleshooting](hypr-voice/docs/guides/setup-guide.md#troubleshooting)** - Common issues and solutions
+
+### ⚡ Features
+- **[Audio Level Visualization](hypr-voice/docs/features/audio-level-visualization.md)** - Real-time audio feedback
+- **[Clipboard Paste Fix](hypr-voice/docs/features/paste-fix.md)** - Universal paste support for all apps
+
+### 🔧 Technical Details
+- **[Implementation Summary](hypr-voice/docs/technical/implementation-summary.md)** - Technical overview
+- **[Architecture](hypr-voice/README.md)** - Detailed system architecture
+- **[Scripts Overview](hypr-voice/docs/technical/scripts-overview.txt)** - Available utility scripts
+
+## 🎯 Supported Applications
+
+### ✅ Fully Supported
+- **Terminals**: Kitty, Alacritty, Foot, Wezterm (auto-detects Ctrl+Shift+V)
+- **Editors**: VS Code, Windsurf, Cursor, Neovim (smart paste detection)
+- **Browsers**: Firefox, Chrome, Edge
+- **Communication**: Discord, Slack, Telegram, Teams
+- **Productivity**: LibreOffice, GEdit, Obsidian
+
+### 🎛️ Application Profiles
+Hypr-Voice includes intelligent profiles for different applications:
+
+- **Terminal**: Technical command preservation, shell abbreviations
+- **VSCode/Windsurf**: Code documentation, syntax preservation
+- **Gmail**: Professional email formatting and etiquette
+- **Discord/Slack**: Casual conversation maintenance
+- **Obsidian**: Markdown formatting and organization
+
+## ⚙️ Configuration
+
+### Audio Configuration
+Located in `hypr-voice/config/audio_config.yaml`:
+- Primary/secondary audio devices
+- Quality settings (48kHz recording, 16kHz for Whisper)
+- Auto-fallback support
+
+### Application Profiles
+Located in `hypr-voice/config/app_profiles.yaml`:
+- Per-app writing styles
+- Context rules and terminology
+- LLM provider settings
+
+### LLM Providers
+Configure in `hypr-voice/config/llm_providers.yaml`:
+- **xAI/Grok** (primary, fast and intelligent)
+- **OpenAI** (fallback, GPT-4)
+- **Anthropic** (fallback, Claude)
+- **Ollama** (local, Llama3.1)
+
+## 🔧 Advanced Usage
+
+### Mode Selection
+- **Raw Mode**: Fast transcription, no LLM overhead (default)
+- **Enhanced Mode**: Context-aware AI improvement
+
+### Memory System
+- **Session Memory**: Remembers context during current session
+- **Persistent Memory**: Learns from interactions across sessions
+- **Knowledge Graphs**: Semantic relationships using Cognee + LanceDB
+
+### Customization
+```bash
+# Change Whisper model
+export WHISPER_MODEL="small"  # Options: tiny, base, small, medium, large
+
+# Enable LLM enhancement
+export RAW_MODE=false
+
+# Adjust audio levels
+export SHOW_AUDIO_LEVELS=true
+```
+
+## 🛠️ Development
+
+### Project Structure
+```
+Hypr-Voice-main/
+├── README.md                    # This file
+├── hypr-voice/                  # Main application
+│   ├── *.py                     # Python modules
+│   ├── scripts/                 # Utility scripts
+│   ├── config/                  # Configuration files
+│   └── docs/                    # Documentation
+└── OLD_MARKDOWN_FILES/          # Backup during reorganization
+```
+
+### Core Components
+- **`whisper_server.py`** - FastAPI transcription server
+- **`hypr_voice.py`** - Main client with Hyprland integration
+- **`context_engine_cognee.py`** - AI context and memory management
+- **`agent_orchestrator.py`** - Multi-provider LLM orchestration
+
+### Dependencies
+- **Audio**: `faster-whisper`, `sounddevice`, `webrtcvad`
+- **AI**: `cognee`, `lancedb`, `voyageai`, various LLM SDKs
+- **System**: `wtype`, `wl-clipboard`, `libnotify`
+- **Web**: `fastapi`, `websockets`
+
+## 🐛 Troubleshooting
+
+### Common Issues
+```bash
+# Check system status
+./scripts/debug_setup.sh
+
+# Test audio devices
+./scripts/test_audio.sh
+
+# View logs
+./scripts/run_hypr_voice.sh logs
+
+# Restart services
+./scripts/run_hypr_voice.sh restart
+```
+
+### Performance
+- **Latency**: 2-5 seconds for short phrases
+- **CPU Usage**: 30-60% during transcription (medium model on CPU)
+- **Memory**: ~500MB for Whisper + context engine
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Run tests: `./scripts/debug_setup.sh`
+5. Submit a pull request
+
+## 📄 License
+
+MIT License - see [LICENSE](hypr-voice/LICENSE) file for details
+
+## 🙏 Acknowledgments
+
+- **OpenAI Whisper** for exceptional transcription accuracy
+- **Ollama** for local LLM inference
+- **Cognee** for knowledge graph memory management
+- **Hyprland community** for the amazing window manager
+- **Wayland ecosystem** contributors
+
+## 📊 Performance
+
+- **Accuracy**: Excellent (Whisper medium model)
+- **Speed**: 2-5 second latency for most phrases
+- **Reliability**: Multiple fallback mechanisms
+- **Compatibility**: Works with virtually all Wayland applications
 
 ---
 
-**📚 Documentation Last Updated**: October 2025
-**🎯 Best viewed in**: Markdown viewer with syntax highlighting
+**🎉 Ready to get started?**
+
+1. Run `./scripts/install_deps.sh`
+2. Test with `./scripts/test_audio.sh`
+3. Start with `./scripts/run_hypr_voice.sh start`
+4. Press `F9` and begin dictating!
+
+**Need help?** Check the [Installation Guide](hypr-voice/docs/installation/START_HERE.md) or [Setup Guide](hypr-voice/docs/guides/setup-guide.md).
