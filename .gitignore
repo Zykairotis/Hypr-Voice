@@ -104,3 +104,32 @@ memory/agents/*
 coordination/memory_bank/*
 coordination/subtasks/*
 coordination/orchestration/*
+
+# Node modules and large build files
+web-ui/node_modules/
+**/node_modules/
+web-ui/dist/
+**/dist/
+web-ui/build/
+**/build/
+web-ui/.next/
+**/.next/
+
+# Large log files
+logs/**/*.json
+web-ui/logs/**/*.json
+src/api/logs/**/*.json
+*.json
+!package.json
+!package-lock.json
+!yarn.lock
+!tsconfig.json
+!*.config.js
+!*.config.ts
+
+# Large binary files
+*.node
+*.exe
+*.dll
+*.so
+*.dylib
