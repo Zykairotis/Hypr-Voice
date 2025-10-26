@@ -1,0 +1,425 @@
+/* Log Filters Component */
+.log-filters {
+  background: var(--filter-background, #f8f9fa);
+  border-bottom: 1px solid var(--border-color, #e0e0e0);
+  padding: 12px 16px;
+}
+
+/* Filter Header */
+.filter-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.filter-header h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-color, #333333);
+}
+
+.active-filter-count {
+  background: var(--info-color, #007bff);
+  color: white;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.filter-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toggle-advanced,
+.clear-filters {
+  background: none;
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--text-color, #333333);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.toggle-advanced:hover,
+.clear-filters:hover {
+  background: var(--hover-background, #e9ecef);
+  border-color: var(--hover-border, #adb5bd);
+}
+
+.clear-filters {
+  background: var(--warning-color, #ffc107);
+  color: #000;
+  border-color: #e0a800;
+}
+
+.clear-filters:hover {
+  background: #e0a800;
+  border-color: #d39e00;
+}
+
+/* Filter Content */
+.filter-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Filter Groups */
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.filter-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--label-color, #495057);
+  margin: 0;
+}
+
+/* Level Filters */
+.level-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.level-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.level-filter input[type="checkbox"] {
+  margin: 0;
+}
+
+.level-indicator {
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: white;
+  transition: all 0.2s ease;
+}
+
+.level-indicator.level-debug {
+  background: var(--debug-color, #6c757d);
+}
+
+.level-indicator.level-info {
+  background: var(--info-color, #007bff);
+}
+
+.level-indicator.level-warn {
+  background: var(--warning-color, #ffc107);
+  color: #000;
+}
+
+.level-indicator.level-error {
+  background: var(--error-color, #dc3545);
+}
+
+.level-indicator.level-fatal {
+  background: #6f42c1;
+}
+
+.level-filter input[type="checkbox"]:checked + .level-indicator {
+  box-shadow: 0 0 0 2px var(--focus-color, #007bff);
+  transform: scale(1.05);
+}
+
+/* Source Filters */
+.source-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.source-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.source-filter input[type="checkbox"] {
+  margin: 0;
+}
+
+.source-name {
+  padding: 4px 8px;
+  background: var(--source-background, #e9ecef);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text-color, #333333);
+  transition: all 0.2s ease;
+}
+
+.source-filter input[type="checkbox"]:checked + .source-name {
+  background: var(--info-color, #007bff);
+  color: white;
+}
+
+.more-sources {
+  color: var(--muted-color, #6c757d);
+  font-size: 11px;
+  font-style: italic;
+  padding: 4px 8px;
+}
+
+/* Advanced Filters */
+.advanced-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-color, #e0e0e0);
+}
+
+/* Time Range Filters */
+.time-range-filters {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.time-input {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.time-input label {
+  font-size: 11px;
+  color: var(--label-color, #495057);
+  font-weight: 500;
+}
+
+.time-input input[type="datetime-local"] {
+  padding: 4px 8px;
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 4px;
+  font-size: 11px;
+  background: var(--input-background, #ffffff);
+  color: var(--text-color, #333333);
+}
+
+/* Session ID Filter */
+.filter-group input[type="text"] {
+  padding: 6px 12px;
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 4px;
+  font-size: 12px;
+  background: var(--input-background, #ffffff);
+  color: var(--text-color, #333333);
+}
+
+/* Filter Presets */
+.filter-presets {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.preset-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.preset-button {
+  padding: 6px 12px;
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 16px;
+  background: var(--preset-background, #ffffff);
+  color: var(--text-color, #333333);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.preset-button:hover {
+  background: var(--preset-hover, #e9ecef);
+  border-color: var(--preset-hover-border, #adb5bd);
+  transform: translateY(-1px);
+}
+
+.preset-button:active {
+  transform: translateY(0);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .log-filters {
+    padding: 8px 12px;
+  }
+
+  .filter-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .filter-actions {
+    justify-content: center;
+  }
+
+  .filter-content {
+    gap: 12px;
+  }
+
+  .level-filters {
+    gap: 6px;
+  }
+
+  .source-filters {
+    gap: 6px;
+    max-height: 100px;
+  }
+
+  .time-range-filters {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .preset-buttons {
+    justify-content: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .filter-header h3 {
+    font-size: 13px;
+  }
+
+  .filter-label {
+    font-size: 11px;
+  }
+
+  .level-indicator {
+    font-size: 9px;
+    padding: 3px 6px;
+  }
+
+  .source-name {
+    font-size: 10px;
+    padding: 3px 6px;
+  }
+
+  .preset-button {
+    font-size: 10px;
+    padding: 4px 8px;
+  }
+
+  .time-input input[type="datetime-local"] {
+    font-size: 10px;
+  }
+
+  .filter-group input[type="text"] {
+    font-size: 11px;
+  }
+}
+
+/* Dark Theme Adjustments */
+.log-viewer[data-theme="dark"] .log-filters {
+  background: var(--filter-background, #2d2d30);
+  border-bottom-color: var(--border-color, #404040);
+}
+
+.log-viewer[data-theme="dark"] .filter-header h3 {
+  color: var(--text-color, #e0e0e0);
+}
+
+.log-viewer[data-theme="dark"] .filter-label {
+  color: #cccccc;
+}
+
+.log-viewer[data-theme="dark"] .toggle-advanced,
+.log-viewer[data-theme="dark"] .clear-filters {
+  background: var(--button-background, #3c3c3c);
+  color: var(--text-color, #e0e0e0);
+  border-color: var(--border-color, #555555);
+}
+
+.log-viewer[data-theme="dark"] .source-name {
+  background: var(--source-background, #3c3c3c);
+  color: var(--text-color, #e0e0e0);
+}
+
+.log-viewer[data-theme="dark"] .preset-button {
+  background: var(--preset-background, #2d2d30);
+  color: var(--text-color, #e0e0e0);
+  border-color: var(--border-color, #555555);
+}
+
+.log-viewer[data-theme="dark"] .preset-button:hover {
+  background: var(--preset-hover, #3e3e42);
+  border-color: var(--preset-hover-border, #666666);
+}
+
+.log-viewer[data-theme="dark"] .time-input input[type="datetime-local"],
+.log-viewer[data-theme="dark"] .filter-group input[type="text"] {
+  background: var(--input-background, #3c3c3c);
+  color: var(--text-color, #e0e0e0);
+  border-color: var(--border-color, #555555);
+}
+
+/* High Contrast Mode */
+@media (prefers-contrast: high) {
+  .toggle-advanced,
+  .clear-filters,
+  .preset-button {
+    border-width: 2px;
+  }
+
+  .level-indicator {
+    border: 1px solid currentColor;
+  }
+
+  .source-name {
+    border: 1px solid var(--border-color, #000000);
+  }
+}
+
+/* Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  .level-indicator,
+  .source-name,
+  .preset-button {
+    transition: none;
+  }
+
+  .preset-button:hover {
+    transform: none;
+  }
+}
+
+/* Focus States */
+.toggle-advanced:focus-visible,
+.clear-filters:focus-visible,
+.preset-button:focus-visible,
+.time-input input:focus-visible,
+.filter-group input:focus-visible {
+  outline: 2px solid var(--focus-color, #007bff);
+  outline-offset: 2px;
+}
