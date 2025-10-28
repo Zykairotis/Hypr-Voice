@@ -1,0 +1,29 @@
+# ALSA Configuration for Hypr-Voice WhisperLive
+# Suppresses warnings about unavailable audio devices
+
+# Use PulseAudio as default
+pcm.!default {
+    type pulse
+    fallback "sysdefault"
+    hint {
+        show on
+        description "Default ALSA Output (via PulseAudio)"
+    }
+}
+
+ctl.!default {
+    type pulse
+    fallback "sysdefault"
+}
+
+# Disable plugins that cause warnings
+pcm.rear null
+pcm.center_lfe null
+pcm.side null
+pcm.hdmi null
+pcm.modem null
+pcm.phoneline null
+
+# Suppress OSS emulation warnings
+pcm.dsp0 null
+pcm.dsp1 null

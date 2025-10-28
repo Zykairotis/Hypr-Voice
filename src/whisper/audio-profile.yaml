@@ -1,0 +1,31 @@
+# Audio Profile Configuration for Hypr-Voice WhisperLive
+
+# PulseAudio Configuration
+pulseaudio:
+  # Default audio input source
+  # This is the monitor of your HDMI output (captures what's playing)
+  default_source: "alsa_output.pci-0000_2d_00.1.hdmi-stereo.monitor"
+  
+  # Device Description
+  device_name: "GA102 High Definition Audio Controller Digital Stereo (HDMI)"
+  device_type: "monitor"  # monitor = capture output, source = capture microphone
+
+# Audio Settings
+audio:
+  sample_rate: 16000
+  channels: 1  # mono
+  chunk_size: 2048
+  format: "int16"
+
+# ALSA Configuration (suppress warnings)
+alsa:
+  # Suppress unnecessary ALSA device probing
+  suppress_warnings: true
+  # Only use PulseAudio, don't probe hardware directly
+  use_pulseaudio_only: true
+
+# Tips for finding audio devices:
+# List all sources:        pactl list sources short
+# List sink monitors:      pactl list sinks short
+# Set default source:      pactl set-default-source <source-name>
+# Test recording:          parecord --channels=1 --rate=16000 test.wav

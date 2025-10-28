@@ -1,13 +1,13 @@
 #!/bin/bash
-# WhisperLive Client Startup Script - Reads audio device from config.yaml
+# WhisperLive Client Startup Script - Reads audio device from audio-profile.yaml
 
 set -e
 
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 VENV_PATH="$PROJECT_ROOT/.venv"
-CONFIG_FILE="$SCRIPT_DIR/config.yaml"
+AUDIO_PROFILE="$SCRIPT_DIR/audio-profile.yaml"
 
 # Colors
 GREEN='\033[0;32m'
@@ -20,21 +20,40 @@ echo -e "${BLUE}🎤 Starting WhisperLive Client for Hypr-Voice${NC}"
 # Activate virtual environment
 source "$VENV_PATH/bin/activate"
 
-# Extract PulseAudio source from YAML config
-if [ -f "$CONFIG_FILE" ]; then
+# Suppress ALSA warnings by using custom config
+if [ -f "$SCRIPT_DIR/.asoundrc" ]; then
+    export ALSA_CONFIG_PATH="$SCRIPT_DIR/.asoundrc"
+fi
+export ALSA_CARD=0
+export ALSA_PCM_CARD=0
+
+# Extract PulseAudio source from audio profile
+if [ -f "$AUDIO_PROFILE" ]; then
     PULSE_DEVICE=$(python3 -c "
 import yaml
-with open('$CONFIG_FILE', 'r') as f:
+with open('$AUDIO_PROFILE', 'r') as f:
     config = yaml.safe_load(f)
-    print(config['audio'].get('pulseaudio_source', ''))
+    print(config['pulseaudio']['default_source'])
+" 2>/dev/null)
+    
+    DEVICE_NAME=$(python3 -c "
+import yaml
+with open('$AUDIO_PROFILE', 'r') as f:
+    config = yaml.safe_load(f)
+    print(config['pulseaudio'].get('device_name', 'Unknown'))
 " 2>/dev/null)
     
     if [ -n "$PULSE_DEVICE" ]; then
+        # Set as system default source
+        pactl set-default-source "$PULSE_DEVICE" 2>/dev/null || true
         export PULSE_SOURCE="$PULSE_DEVICE"
+        echo -e "${GREEN}[INFO]${NC} Audio device: $DEVICE_NAME"
         echo -e "${GREEN}[INFO]${NC} Audio source: $PULSE_DEVICE"
     else
-        echo -e "${YELLOW}[WARN]${NC} No pulseaudio_source in config, using system default"
+        echo -e "${YELLOW}[WARN]${NC} No audio profile found, using system default"
     fi
+else
+    echo -e "${YELLOW}[WARN]${NC} Audio profile not found at $AUDIO_PROFILE"
 fi
 
 cd "$SCRIPT_DIR"
