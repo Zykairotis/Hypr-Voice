@@ -1,0 +1,56 @@
+1
+00:00:08,621 --> 00:00:14,862
+ hello what do you think about the current situation in the market
+
+2
+00:00:14,862 --> 00:00:27,861
+ and find a way by which we can change our methods and believe in ourselves.
+
+3
+00:00:28,801 --> 00:00:41,521
+ So what do you think it will be the best way to describe the current situation now that we have everything
+
+4
+00:00:42,341 --> 00:00:44,002
+ flying with the process
+
+5
+00:00:44,002 --> 00:00:52,801
+ model which can be fine-tuned to our need our need I mean
+
+6
+00:00:56,576 --> 00:00:57,015
+ That's right.
+
+7
+00:00:57,996 --> 00:00:58,996
+ Correct.
+
+8
+00:00:58,996 --> 00:00:59,996
+ Let's go.
+
+9
+00:00:59,996 --> 00:01:05,995
+ Of course there are many things that I believe can be configured as well.
+
+10
+00:01:11,597 --> 00:01:16,597
+ But the crazy part is that the GPU spike is a lot.
+
+11
+00:01:18,498 --> 00:01:20,498
+ It's going crazy about
+
+12
+00:01:20,927 --> 00:01:22,927
+ 1.1 gigs of RAM
+
+13
+00:01:24,347 --> 00:01:28,427
+ Vira my baby
+
+14
+00:01:28,427 --> 00:01:30,427
+ VRAM
+
