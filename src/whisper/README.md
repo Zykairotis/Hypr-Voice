@@ -129,7 +129,7 @@ pactl set-default-source alsa_output.pci-0000_2d_00.1.hdmi-stereo.monitor
 ## 📁 File Structure
 
 ```
-final-whisper/
+src/whisper/
 ├── whisper_live/
 │   ├── client.py              # Audio capture & streaming
 │   ├── server.py              # WebSocket server

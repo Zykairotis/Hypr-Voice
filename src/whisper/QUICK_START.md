@@ -3,7 +3,7 @@
 ## One-Command Start
 
 ```bash
-cd /home/mewtwo/Zykairotis/Hypr-Voice/final-whisper
+cd /home/mewtwo/Zykairotis/Hypr-Voice/src/whisper
 
 # Start server
 ./start_server.sh start
@@ -26,7 +26,7 @@ That's it! Speak and see real-time transcription.
 
 ### 📁 Directory Structure
 ```
-final-whisper/
+src/whisper/
 ├── whisper_live/          # Core library (3,896 lines)
 │   ├── client.py         # WebSocket client + audio
 │   ├── server.py         # WebSocket server
