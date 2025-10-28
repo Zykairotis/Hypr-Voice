@@ -164,7 +164,7 @@ class TranscriptionServer:
             return False
         return np.frombuffer(frame_data, dtype=np.float32)
 
-    def handle_new_connection(self, websocket, faster_whisper_custom_model_path,
+    def handle_new_connection(self, websocket, faster_whisper_custom_model_path):
         try:
             logging.info("New client connected")
             options = websocket.recv()
@@ -175,7 +175,7 @@ class TranscriptionServer:
                 websocket.close()
                 return False  # Indicates that the connection should not continue
 
-            self.initialize_client(websocket, options, faster_whisper_custom_model_path,
+            self.initialize_client(websocket, options, faster_whisper_custom_model_path)
             return True
         except json.JSONDecodeError:
             logging.error("Failed to decode JSON from client")
