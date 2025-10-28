@@ -6,20 +6,29 @@ set -e
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WHISPER_ROOT="$(dirname "$SCRIPT_DIR")"
-PROJECT_ROOT="$(dirname "$(dirname "$WHISPER_ROOT")")"
+
+# For hybrid-whisper worktree, we need to go up to the main Hypr-Voice root
+# Path: .../Hypr-Voice/src/hybrid-whisper/src/whisper/scripts
+# We need to go up 5 levels to reach Hypr-Voice root
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../../../.." && pwd)"
 VENV_PATH="$PROJECT_ROOT/.venv"
 AUDIO_PROFILE="$WHISPER_ROOT/config/audio-profile.yaml"
 
 # Colors
+RED='\033[0;31m'
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
 echo -e "${BLUE}🎤 Starting WhisperLive Client for Hypr-Voice${NC}"
+echo -e "${GREEN}[INFO]${NC} Virtual Environment: $VENV_PATH"
 
-# Activate virtual environment
-source "$VENV_PATH/bin/activate"
+# Check if venv exists
+if [ ! -d "$VENV_PATH" ] || [ ! -f "$VENV_PATH/bin/python" ]; then
+    echo -e "${RED}[ERROR]${NC} Virtual environment not found at $VENV_PATH"
+    exit 1
+fi
 
 # Suppress ALSA warnings by using custom config
 if [ -f "$WHISPER_ROOT/config/.asoundrc" ]; then
@@ -28,16 +37,16 @@ fi
 export ALSA_CARD=0
 export ALSA_PCM_CARD=0
 
-# Extract PulseAudio source from audio profile
+# Extract PulseAudio source from audio profile using venv's python
 if [ -f "$AUDIO_PROFILE" ]; then
-    PULSE_DEVICE=$(python3 -c "
+    PULSE_DEVICE=$("$VENV_PATH/bin/python" -c "
 import yaml
 with open('$AUDIO_PROFILE', 'r') as f:
     config = yaml.safe_load(f)
     print(config['pulseaudio']['default_source'])
 " 2>/dev/null)
     
-    DEVICE_NAME=$(python3 -c "
+    DEVICE_NAME=$("$VENV_PATH/bin/python" -c "
 import yaml
 with open('$AUDIO_PROFILE', 'r') as f:
     config = yaml.safe_load(f)
@@ -59,35 +68,11 @@ fi
 
 cd "$WHISPER_ROOT"
 
-echo -e "${GREEN}[INFO]${NC} Server: localhost:9090"
-echo -e "${GREEN}[INFO]${NC} Model: openai/whisper-large-v3-turbo (INT8)"
-echo -e "${GREEN}[INFO]${NC} VAD: Disabled (will transcribe all audio)"
+echo -e "${GREEN}[INFO]${NC} Server: http://localhost:9090"
+echo -e "${GREEN}[INFO]${NC} Using Hybrid Client (WebSocket mode)"
 echo ""
 echo -e "${BLUE}Press Ctrl+C to stop${NC}"
 echo ""
 
-# Start the client
-python3 << 'PYTHON_EOF'
-import sys
-sys.path.insert(0, '/home/mewtwo/Zykairotis/Hypr-Voice/src/live-whisper')
-
-from whisper_live.client import TranscriptionClient
-
-print("🎤 Listening for audio...")
-print("=" * 60)
-
-client = TranscriptionClient(
-    host="localhost",
-    port=9090,
-    lang="en",
-    translate=False,
-    model="openai/whisper-large-v3-turbo",
-    use_vad=False,  # Disable VAD - transcribe everything
-    log_transcription=True,
-)
-
-try:
-    client()
-except KeyboardInterrupt:
-    print("\n\n✅ Transcription stopped")
-PYTHON_EOF
+# Use the hybrid client with proper WebSocket support
+"$VENV_PATH/bin/python" hybrid_client.py --stream --server http://localhost:9090

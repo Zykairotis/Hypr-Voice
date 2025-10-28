@@ -1,11 +1,11 @@
-# WhisperLive Configuration for Hypr-Voice
+# WhisperLive Hybrid Configuration for Hypr-Voice
 
 # Server Settings
 server:
-  host: "localhost"
+  host: "0.0.0.0"  # Listen on all interfaces for hybrid mode
   port: 9090
-  max_clients: 4
-  max_connection_time: 600  # 10 minutes
+  max_clients: 10  # Support more clients with hybrid approach
+  max_connection_time: 3600  # 1 hour for longer sessions
 
 # Backend Configuration
 backend:
@@ -51,3 +51,40 @@ model:
   download_root: "/tmp/whisper-models"
   local_files_only: false
   compute_type: "int8_float16"  # GPU INT8 quantization: lower VRAM, faster inference
+  num_workers: 2
+  cpu_threads: 4
+
+# Hybrid Mode Settings
+hybrid:
+  enabled: true
+  protocol: "both"  # Options: websocket, rest, both
+  rest_api:
+    enabled: true
+    max_upload_size: 500  # MB
+    allowed_formats: ["wav", "mp3", "mp4", "mkv", "flac", "m4a", "ogg", "webm"]
+    job_queue: true
+    cleanup_after: 3600  # seconds
+  websocket:
+    enabled: true
+    heartbeat_interval: 30  # seconds
+    max_message_size: 10  # MB
+  shared_model: true  # Share model instance between REST and WebSocket
+
+# API Settings
+api:
+  cors_origins: ["*"]  # Allow all origins for testing
+  authentication: false  # No auth for now
+  rate_limiting: false
+  docs_enabled: true  # Enable FastAPI docs at /docs
+
+# CTranslate2 Settings (for future optimization)
+ctranslate2:
+  inter_threads: 1
+  intra_threads: 4
+  beam_size: 3
+  patience: 1.0
+  length_penalty: 1.0
+  temperature: 0.0
+  compression_ratio_threshold: 2.4
+  log_prob_threshold: -1.0
+  no_speech_threshold: 0.6
