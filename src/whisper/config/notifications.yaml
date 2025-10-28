@@ -1,0 +1,21 @@
+# Hypr-Voice Notification Configuration
+# Control which notifications are shown during voice typing operations
+
+notifications:
+  # Enable/disable all notifications globally
+  enabled: false
+  
+  # Individual notification toggles
+  recording_started: false      # "🔴 Recording..." when F9 pressed
+  recording_stopped: false      # "⏹️ Processing..." when F9 released
+  transcription_success: false  # "✅ Typed" with preview text
+  transcription_empty: false    # "🔇 No Speech" when no speech detected
+  transcription_error: false    # "❌ Error" when transcription fails
+  already_recording: false      # "⚠️ Already Recording" warning
+  not_recording: false          # "⚠️ Not Recording" warning
+  recording_failed: false       # "⚠️ Recording Failed" when audio capture fails
+  
+  # Notification display settings
+  duration_ms: 3000            # How long notifications stay visible (milliseconds)
+  
+# Note: Even with notifications disabled, console/terminal output will still show status messages

@@ -1,0 +1,63 @@
+#!/bin/bash
+# Quick start script for wtype integration - Microphone mode (for voice input)
+
+set -e
+
+# Get script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WHISPER_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../../../.." && pwd)"
+VENV_PATH="$PROJECT_ROOT/.venv"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+echo -e "${BLUE}🎤 Starting wtype Voice-to-Type (Microphone Mode)${NC}"
+echo ""
+
+# Check if venv exists
+if [ ! -d "$VENV_PATH" ] || [ ! -f "$VENV_PATH/bin/python" ]; then
+    echo -e "${RED}[ERROR]${NC} Virtual environment not found at $VENV_PATH"
+    exit 1
+fi
+
+# Check if wtype is installed
+if ! command -v wtype &> /dev/null; then
+    echo -e "${RED}[ERROR]${NC} wtype not found!"
+    echo -e "${YELLOW}[INFO]${NC} Install with: sudo apt-get install wtype"
+    exit 1
+fi
+
+# Check if server is running
+if ! curl -s http://localhost:9090/health > /dev/null 2>&1; then
+    echo -e "${YELLOW}[WARN]${NC} Server not responding at http://localhost:9090"
+    echo -e "${YELLOW}[INFO]${NC} Start server with: ./scripts/start_hybrid_server.sh"
+    echo ""
+    read -p "Continue anyway? (y/N) " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        exit 1
+    fi
+fi
+
+cd "$WHISPER_ROOT"
+
+echo -e "${GREEN}[INFO]${NC} Audio device: System default microphone"
+echo -e "${GREEN}[INFO]${NC} Server: http://localhost:9090"
+echo -e "${GREEN}[INFO]${NC} Mode: Real-time voice-to-type"
+echo ""
+echo -e "${YELLOW}IMPORTANT:${NC}"
+echo -e "  1. Click in a text field (Google Docs, Discord, etc.)"
+echo -e "  2. Keep that window focused"
+echo -e "  3. ${GREEN}Speak into your microphone${NC}"
+echo -e "  4. Watch your words appear automatically!"
+echo ""
+echo -e "${BLUE}Press Ctrl+C to stop${NC}"
+echo ""
+
+# Run with optimized settings: word mode, fast typing, NO WAIT
+"$VENV_PATH/bin/python" wltype_integration.py --realtime --use-microphone --word-mode --stability-checks 0

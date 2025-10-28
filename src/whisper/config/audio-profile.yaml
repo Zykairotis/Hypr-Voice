@@ -24,6 +24,19 @@ alsa:
   # Only use PulseAudio, don't probe hardware directly
   use_pulseaudio_only: true
 
+# Recording Configuration
+recording:
+  # Save recordings to disk (recordings/ folder)
+  save_recordings: false
+  # Recording format
+  format: "wav"
+  sample_rate: 16000
+  channels: 1
+  # Auto-cleanup old recordings
+  auto_cleanup:
+    enabled: false
+    days_to_keep: 7
+
 # Tips for finding audio devices:
 # List all sources:        pactl list sources short
 # List sink monitors:      pactl list sinks short

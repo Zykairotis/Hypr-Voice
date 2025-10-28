@@ -358,8 +358,8 @@ class TranscriptionSession:
         
         # Perplexity-recommended settings for optimal transcription
         self.min_chunk_size = 1.0  # Process every 1 second (best quality-latency tradeoff)
-        self.buffer_trim_threshold = 15.0  # Trim buffer at 15 seconds
-        self.max_buffer_duration = 30.0  # Whisper is trained on 30-second segments
+        self.buffer_trim_threshold = float('inf')  # No buffer trimming - process entire file
+        self.max_buffer_duration = float('inf')  # No duration limit - process entire file
         
         # For WebSocket streaming
         self.max_transcription_wait = 3600.0  # 1 hour for streaming
@@ -406,16 +406,20 @@ class TranscriptionSession:
             self.audio_history = np.concatenate([self.audio_history, audio_data])
             self.history_duration = len(self.audio_history) / 16000.0
             
-            # Trim buffer at sentence boundaries if over threshold (Perplexity best practice)
-            if self.history_duration > self.buffer_trim_threshold:
-                # Keep last 15 seconds
-                samples_to_keep = int(15.0 * 16000)
+            # Trim buffer at sentence boundaries if over threshold (for very long sessions)
+            # Skip trimming if threshold is infinity
+            if not np.isinf(self.buffer_trim_threshold) and self.history_duration > self.buffer_trim_threshold:
+                # Keep last 60 seconds (1 minute)
+                samples_to_keep = int(60.0 * 16000)
                 self.audio_history = self.audio_history[-samples_to_keep:]
                 self.history_duration = len(self.audio_history) / 16000.0
                 logger.info(f"Session {self.session_id}: Trimmed buffer to {self.history_duration:.2f}s")
             
-            # Transcribe entire buffer (up to 30 seconds max)
-            audio_to_transcribe = self.audio_history[-int(self.max_buffer_duration * 16000):]
+            # Transcribe entire buffer (use all if max_buffer_duration is infinity)
+            if np.isinf(self.max_buffer_duration):
+                audio_to_transcribe = self.audio_history
+            else:
+                audio_to_transcribe = self.audio_history[-int(self.max_buffer_duration * 16000):]
             
             logger.info(f"Session {self.session_id}: Processing audio of {len(audio_to_transcribe)/16000:.2f}s")
             
@@ -541,6 +545,13 @@ class TranscriptionSession:
                     if self.accumulated_audio and len(self.accumulated_audio) > 0:
                         combined_audio = np.concatenate(self.accumulated_audio)
                         self._process_accumulated_audio(model, combined_audio)
+                    
+                    # Force-confirm any pending transcription when file upload ends
+                    if self.previous_transcription and not self.text:
+                        self.text = clean_text(self.previous_transcription)
+                        self.confirmed_text = self.text
+                        logger.info(f"Session {self.session_id}: Force-confirmed final text: '{self.text}'")
+                    
                     if self.audio_queue.empty():
                         break
                     else:

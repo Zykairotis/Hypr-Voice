@@ -162,8 +162,8 @@ class HybridWhisperClient:
             logger.error(f"Error transcribing file: {e}")
             return None
     
-    def get_final_transcription(self, session_id=None, wait=True, interval=5, inactivity_timeout=60):
-        """Wait for transcription to complete and return final result."""
+    def get_final_transcription(self, session_id=None, wait=True, interval=0.2, inactivity_timeout=60):
+        """Wait for transcription to complete and return final result. Polls every 0.2s for fast response."""
         sid = session_id if session_id else self.session_id
         if not sid:
             logger.error("No session ID provided")
