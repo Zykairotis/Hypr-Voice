@@ -147,8 +147,31 @@ class TranscriptionServer:
     ):
         client: Optional[ServeClientBase] = None
 
-        # Check if client wants translation
-        translation_queue = None
+        # Only faster-whisper backend supported
+        from whisper_live.backend.faster_whisper_backend import ServeClientFasterWhisper
+        
+        # Use custom model path if provided, otherwise use default from options
+        model_to_use = faster_whisper_custom_model_path if faster_whisper_custom_model_path else options.get("model", "small.en")
+        
+        client = ServeClientFasterWhisper(
+            websocket,
+            language=options["language"],
+            task=options["task"],
+            client_uid=options["uid"],
+            model=model_to_use,
+            send_last_n_segments=options.get("send_last_n_segments", 10),
+            no_speech_thresh=options.get("no_speech_thresh", 0.45),
+            use_vad=options.get("use_vad", True),
+            clip_audio=options.get("clip_audio", False),
+            same_output_threshold=options.get("same_output_threshold", 10),
+            cache_path=self.cache_path,
+        )
+
+        logging.info("Running faster_whisper backend.")
+        
+        self.client_manager.add_client(websocket, client)
+        return client
+
     def get_audio_from_websocket(self, websocket):
         """
         Receives audio buffer from websocket and creates a numpy array out of it.
@@ -197,9 +220,10 @@ class TranscriptionServer:
         return True
 
     def recv_audio(self,
-                   websocket,   
+                   websocket,
                    backend: BackendType = BackendType.FASTER_WHISPER,
                    faster_whisper_custom_model_path=None,
+                   ):
         """
         Receive audio chunks from a client in an infinite loop.
 
@@ -223,7 +247,7 @@ class TranscriptionServer:
             Exception: If there is an error during the audio frame processing.
         """
         self.backend = backend
-        if not self.handle_new_connection(websocket, faster_whisper_custom_model_path,
+        if not self.handle_new_connection(websocket, faster_whisper_custom_model_path):
             return
 
         try:
@@ -261,11 +285,11 @@ class TranscriptionServer:
         if faster_whisper_custom_model_path is not None and not os.path.exists(faster_whisper_custom_model_path):
             raise ValueError(f"Custom faster_whisper model '{faster_whisper_custom_model_path}' is not a valid path.")
         if single_model:
-                logging.info("Custom model option was provided. Switching to single model mode.")
-                self.single_model = True
-                # TODO: load model initially
-            else:
-                logging.info("Single model mode currently only works with custom models.")
+            logging.info("Custom model option was provided. Switching to single model mode.")
+            self.single_model = True
+            # TODO: load model initially
+        else:
+            logging.info("Single model mode currently only works with custom models.")
         if not BackendType.is_valid(backend):
             raise ValueError(f"{backend} is not a valid backend type. Choose backend from {BackendType.valid_types()}")
         with serve(
