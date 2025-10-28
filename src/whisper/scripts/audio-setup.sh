@@ -1,6 +1,11 @@
 #!/bin/bash
 # Audio Setup Helper for Hypr-Voice WhisperLive
 
+# Get script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WHISPER_ROOT="$(dirname "$SCRIPT_DIR")"
+DEFAULT_PROFILE="$WHISPER_ROOT/config/audio-profile.yaml"
+
 # Colors
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -74,7 +79,7 @@ show_current() {
 
 # Function to set audio device from profile
 apply_profile() {
-    local profile_file="${1:-audio-profile.yaml}"
+    local profile_file="${1:-$DEFAULT_PROFILE}"
     
     if [ ! -f "$profile_file" ]; then
         echo -e "${RED}❌ Profile not found: $profile_file${NC}"

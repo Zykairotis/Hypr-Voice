@@ -1,153 +1,194 @@
-# Final WhisperLive - Essential Files Only
+# WhisperLive for Hypr-Voice
 
-**Minimal WhisperLive implementation for Hypr-Voice**  
-Real-time transcription with faster-whisper INT8 backend
+Real-time speech transcription using WhisperLive with optimized INT8 model support.
 
----
-
-## 📦 What's Included (4,659 lines)
-
-### Core Library (`whisper_live/`)
-- `client.py` (827 lines) - Audio capture & WebSocket client
-- `server.py` (328 lines) - Simplified WebSocket server  
-- `vad.py` (157 lines) - Voice Activity Detection
-- `utils.py` (83 lines) - Helper functions
-
-### Faster-Whisper Backend (`whisper_live/backend/`)
-- `base.py` (379 lines) - Base backend class
-- `faster_whisper_backend.py` (237 lines) - INT8 GPU implementation
-
-### Transcriber (`whisper_live/transcriber/`)
-- `transcriber_faster_whisper.py` (1,888 lines) - Whisper model wrapper
-
-### Configuration & Scripts
-- `config.yaml` - Server & audio configuration
-- `start_server.sh` - Server startup script
-- `start_client_mic.sh` - Client with audio device config
-- `start_whisper_live.py` - Python server launcher
-- `test_client.py` - Connection test script
-- `run_server.py` - Alternative server launcher
-- `run_client.py` - Alternative client launcher
-
----
-
-## 🚀 Quick Start
-
-### 1. Start Server
-```bash
-./start_server.sh start
-```
-
-### 2. Test with Microphone
-```bash
-./start_client_mic.sh
-```
-
-### 3. Test with Audio File
-```bash
-python run_client.py -f audio.mp3
-```
-
----
-
-## ⚙️ Configuration
-
-Edit `config.yaml`:
-
-```yaml
-# Model
-backend:
-  model_path: "openai/whisper-large-v3-turbo"
-  device: "cuda"
-
-# Audio Input (PulseAudio)
-audio:
-  pulseaudio_source: "alsa_output.pci-0000_2d_00.1.hdmi-stereo.monitor"
-  
-# Server
-server:
-  port: 9090
-  max_clients: 4
-```
-
----
-
-## 📊 What Was Removed
-
-**From original 5,867 lines → 4,659 lines (21% reduction)**
-
-Removed backends:
-- ❌ TensorRT backend (689 lines)
-- ❌ OpenVINO backend (171 lines)
-- ❌ Translation backend (218 lines)
-- ❌ Related transcribers and utilities
-
----
-
-## 🎯 Tech Stack
-
-- **Model**: openai/whisper-large-v3-turbo (INT8 quantization)
-- **Backend**: faster-whisper with CTranslate2
-- **GPU**: CUDA with INT8 (~2.7GB VRAM)
-- **Audio**: PyAudio + PulseAudio/PipeWire
-- **Server**: WebSocket (ws://)
-
----
-
-## 📝 Requirements
-
-```bash
-pip install faster-whisper websockets pyaudio pyyaml numpy
-```
-
-Or use project venv:
-```bash
-source /home/mewtwo/Zykairotis/Hypr-Voice/.venv/bin/activate
-```
-
----
-
-## 🔧 Troubleshooting
-
-**No audio input?**
-```bash
-# Set default audio source
-pactl set-default-source alsa_output.pci-0000_2d_00.1.hdmi-stereo.monitor
-```
-
-**Model not loading?**
-- Check CUDA available: `nvidia-smi`
-- First connection downloads & converts model (~7 min)
-- Subsequent connections are instant
-
-**VAD filtering everything?**
-- Set `use_vad=False` in client
-- Or lower `vad_threshold` in config.yaml
-
----
-
-## 📁 File Structure
+## 🗂️ Project Structure
 
 ```
 src/whisper/
-├── whisper_live/
-│   ├── client.py              # Audio capture & streaming
-│   ├── server.py              # WebSocket server
-│   ├── vad.py                 # Voice activity detection
-│   ├── utils.py               # Helpers
-│   ├── backend/
-│   │   ├── base.py           # Backend base class
-│   │   └── faster_whisper_backend.py  # INT8 GPU backend
-│   └── transcriber/
-│       └── transcriber_faster_whisper.py  # Model wrapper
-├── config.yaml                # Configuration
-├── start_server.sh            # Server launcher
-├── start_client_mic.sh        # Client launcher
-└── README.md                  # This file
+├── README.md                    # This file
+├── start_whisper_live.py        # Main server entry point
+├── whisper_live/                # WhisperLive library
+│
+├── config/                      # Configuration files
+│   ├── config.yaml             # Main WhisperLive configuration
+│   ├── audio-profile.yaml      # Audio device settings
+│   └── .asoundrc               # ALSA configuration
+│
+├── scripts/                     # Executable scripts
+│   ├── start_server.sh         # Start WhisperLive server
+│   ├── start_client_mic.sh     # Start client with microphone
+│   └── audio-setup.sh          # Audio configuration helper
+│
+├── docs/                        # Documentation
+│   ├── README.md               # Detailed documentation
+│   ├── QUICK_START.md          # Quick start guide
+│   └── AUDIO_SETUP.md          # Audio configuration guide
+│
+├── examples/                    # Example scripts
+│   ├── run_server.py           # Example server runner
+│   ├── run_client.py           # Example client
+│   └── test_client.py          # Client tests
+│
+├── data/                        # Data files
+│   ├── harvard_resampled_resampled.wav
+│   └── output.srt
+│
+└── logs/                        # Log directory
 ```
+
+## 🚀 Quick Start
+
+### 1. Start the Server
+
+```bash
+cd /home/mewtwo/Zykairotis/Hypr-Voice/src/whisper
+./scripts/start_server.sh start
+```
+
+**Server Details:**
+- WebSocket: `ws://localhost:9090`
+- Model: `openai/whisper-large-v3-turbo` (INT8 optimized)
+- Device: CUDA
+- Logs: `/tmp/whisper-live-hypr-voice.log`
+
+### 2. Start the Client
+
+```bash
+./scripts/start_client_mic.sh
+```
+
+The client automatically uses your configured audio device (GA102 HDMI monitor).
+
+## 📋 Available Commands
+
+### Server Management
+
+```bash
+./scripts/start_server.sh start      # Start server
+./scripts/start_server.sh stop       # Stop server
+./scripts/start_server.sh restart    # Restart server
+./scripts/start_server.sh status     # Check status
+./scripts/start_server.sh logs       # View logs
+./scripts/start_server.sh test       # Test WebSocket connection
+```
+
+### Audio Configuration
+
+```bash
+./scripts/audio-setup.sh list        # List audio devices
+./scripts/audio-setup.sh current     # Show current config
+./scripts/audio-setup.sh test        # Test recording (5s)
+./scripts/audio-setup.sh apply       # Apply audio profile
+```
+
+## ⚙️ Configuration
+
+### Main Configuration (`config/config.yaml`)
+
+```yaml
+server:
+  host: "localhost"
+  port: 9090
+  max_clients: 4
+
+backend:
+  type: "faster_whisper"
+  model_path: "openai/whisper-large-v3-turbo"
+  device: "cuda"
+  language: "auto"
+```
+
+### Audio Configuration (`config/audio-profile.yaml`)
+
+```yaml
+pulseaudio:
+  default_source: "alsa_output.pci-0000_2d_00.1.hdmi-stereo.monitor"
+  device_name: "GA102 High Definition Audio Controller"
+```
+
+## 📚 Documentation
+
+- **[docs/README.md](docs/README.md)** - Complete documentation
+- **[docs/QUICK_START.md](docs/QUICK_START.md)** - Quick start guide
+- **[docs/AUDIO_SETUP.md](docs/AUDIO_SETUP.md)** - Audio setup guide
+
+## 🎯 Features
+
+- ✅ Real-time speech transcription
+- ✅ INT8 optimized Whisper model
+- ✅ CUDA acceleration
+- ✅ PulseAudio integration
+- ✅ Automatic audio device configuration
+- ✅ WebSocket streaming
+- ✅ Hypr-Voice integration ready
+
+## 🔧 Requirements
+
+- Python 3.12+ (uses `/home/mewtwo/Zykairotis/Hypr-Voice/.venv`)
+- CUDA-capable GPU
+- PulseAudio
+- Dependencies: `faster-whisper`, `websockets`, `pyyaml`
+
+## 📝 Logs
+
+- Server logs: `/tmp/whisper-live-hypr-voice.log`
+- PID file: `/tmp/whisper-live-server.pid`
+
+View live logs:
+```bash
+tail -f /tmp/whisper-live-hypr-voice.log
+```
+
+## 🛠️ Development
+
+### Run Examples
+
+```bash
+# Server example
+python examples/run_server.py
+
+# Client example
+python examples/run_client.py
+
+# Test client
+python examples/test_client.py
+```
+
+### Project Root
+```bash
+PROJECT_ROOT=/home/mewtwo/Zykairotis/Hypr-Voice
+WHISPER_ROOT=$PROJECT_ROOT/src/whisper
+VENV_PATH=$PROJECT_ROOT/.venv
+```
+
+## 🐛 Troubleshooting
+
+### Server won't start
+```bash
+./scripts/start_server.sh status
+tail -f /tmp/whisper-live-hypr-voice.log
+```
+
+### Audio issues
+```bash
+./scripts/audio-setup.sh list
+./scripts/audio-setup.sh test
+pactl list sources short
+```
+
+### Check logs
+```bash
+tail -f /tmp/whisper-live-hypr-voice.log
+```
+
+## 📖 Related Documentation
+
+- [WhisperLive Documentation](https://github.com/collabora/WhisperLive)
+- [Faster Whisper](https://github.com/guillaumekln/faster-whisper)
+- [PulseAudio Documentation](https://www.freedesktop.org/wiki/Software/PulseAudio/)
 
 ---
 
-**Status**: ✅ Production ready  
-**VRAM Usage**: ~2.7GB (INT8)  
-**Latency**: Real-time (~100-300ms)
+**Part of the Hypr-Voice Project**  
+Virtual Environment: `/home/mewtwo/Zykairotis/Hypr-Voice/.venv`

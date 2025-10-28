@@ -5,9 +5,10 @@ set -e
 
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
+WHISPER_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$(dirname "$WHISPER_ROOT")")"
 VENV_PATH="$PROJECT_ROOT/.venv"
-AUDIO_PROFILE="$SCRIPT_DIR/audio-profile.yaml"
+AUDIO_PROFILE="$WHISPER_ROOT/config/audio-profile.yaml"
 
 # Colors
 GREEN='\033[0;32m'
@@ -21,8 +22,8 @@ echo -e "${BLUE}🎤 Starting WhisperLive Client for Hypr-Voice${NC}"
 source "$VENV_PATH/bin/activate"
 
 # Suppress ALSA warnings by using custom config
-if [ -f "$SCRIPT_DIR/.asoundrc" ]; then
-    export ALSA_CONFIG_PATH="$SCRIPT_DIR/.asoundrc"
+if [ -f "$WHISPER_ROOT/config/.asoundrc" ]; then
+    export ALSA_CONFIG_PATH="$WHISPER_ROOT/config/.asoundrc"
 fi
 export ALSA_CARD=0
 export ALSA_PCM_CARD=0
@@ -56,7 +57,7 @@ else
     echo -e "${YELLOW}[WARN]${NC} Audio profile not found at $AUDIO_PROFILE"
 fi
 
-cd "$SCRIPT_DIR"
+cd "$WHISPER_ROOT"
 
 echo -e "${GREEN}[INFO]${NC} Server: localhost:9090"
 echo -e "${GREEN}[INFO]${NC} Model: openai/whisper-large-v3-turbo (INT8)"

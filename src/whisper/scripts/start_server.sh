@@ -5,11 +5,12 @@ set -e
 
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
+WHISPER_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$(dirname "$WHISPER_ROOT")")"
 VENV_PATH="$PROJECT_ROOT/.venv"
 
 # Configuration
-CONFIG_FILE="$SCRIPT_DIR/config.yaml"
+CONFIG_FILE="$WHISPER_ROOT/config/config.yaml"
 LOG_FILE="/tmp/whisper-live-hypr-voice.log"
 PID_FILE="/tmp/whisper-live-server.pid"
 
@@ -92,8 +93,8 @@ start_server() {
     print_status "Starting server..."
 
     # Start the server
-    cd "$SCRIPT_DIR"
-    nohup python start_whisper_live.py --config config.yaml > "$LOG_FILE" 2>&1 &
+    cd "$WHISPER_ROOT"
+    nohup python start_whisper_live.py --config "$CONFIG_FILE" > "$LOG_FILE" 2>&1 &
     local server_pid=$!
 
     # Save PID
@@ -203,7 +204,7 @@ test_server() {
     print_status "Testing WebSocket connection..."
 
     source "$VENV_PATH/bin/activate"
-    cd "$SCRIPT_DIR"
+    cd "$WHISPER_ROOT"
 
     python3 -c "
 import asyncio
