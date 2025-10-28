@@ -1,54 +1,22 @@
 {
   "mcpServers": {
-    "claude-flow@alpha": {
+    "claude-flow": {
       "type": "stdio",
       "command": "npx",
       "args": [
-        "claude-flow@alpha",
+        "claude-flow",
         "mcp",
         "start"
-      ]
-    },
-    "ruv-swarm": {
-      "type": "stdio",
-      "command": "npx",
-      "args": [
-        "ruv-swarm@latest",
-        "mcp",
-        "start"
-      ]
-    },
-    "flow-nexus": {
-      "type": "stdio",
-      "command": "npx",
-      "args": [
-        "flow-nexus@latest",
-        "mcp",
-        "start"
-      ]
-    },
-    "agentic-payments": {
-      "type": "stdio",
-      "command": "npx",
-      "args": [
-        "agentic-payments@latest",
-        "mcp"
       ]
     },
     "Context7": {
+      "type": "stdio",
       "command": "npx",
       "args": [
         "-y",
         "@upstash/context7-mcp"
       ],
       "env": {}
-    },
-    "shadcn-ui": {
-      "command": "npx",
-      "args": [
-        "shadcn@latest",
-        "mcp"
-      ]
     },
     "perplexity-ai-search": {
       "type": "stdio",
@@ -58,6 +26,18 @@
       ],
       "env": {}
     },
+    "image-and-video-analyzer": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@z_ai/mcp-server"
+      ],
+      "env": {
+        "Z_AI_API_KEY": "ef420bfe14b046c59ba34d9b6ecaf0bb.xo52eQHWzLQp9naF",
+        "Z_AI_MODE": "ZAI"
+      }
+    },
     "quick-data": {
       "type": "stdio",
       "command": "/home/mewtwo/MCP/quick-data-mcp/quick-data-mcp/.venv/bin/python3",
@@ -65,23 +45,6 @@
         "/home/mewtwo/MCP/quick-data-mcp/quick-data-mcp/main.py"
       ],
       "env": {}
-    },
-    "youtube-mcp": {
-      "type": "stdio",
-      "command": "/home/mewtwo/MCP/youtube-mcp/.venv/bin/python",
-      "args": [
-        "/home/mewtwo/MCP/youtube-mcp/run_server.py"
-      ],
-      "env": {
-        "YOUTUBE_API_KEY": "AIzaSyB-g-7IYtTqiolHZFI_oeTTnP5hnkEIcN4"
-      }
-    },
-    "chrome-browser-use": {
-      "command": "npx",
-      "args": [
-        "node",
-        "/home/mewtwo/.npm-global/lib/node_modules/mcp-chrome-bridge/dist/mcp/mcp-server-stdio.js"
-      ]
     },
     "claude-context": {
       "type": "stdio",
@@ -100,6 +63,16 @@
         "VECTOR_DATABASE_PROVIDER": "postgres",
         "POSTGRES_CONNECTION_STRING": "postgresql://postgres:Mewtwo%230075@127.0.0.1:5533/claude_context?sslmode=disable",
         "SYNC_INTERVAL_MINUTES": "3"
+      }
+    },
+    "youtube-mcp": {
+      "type": "stdio",
+      "command": "/home/mewtwo/MCP/youtube-mcp/.venv/bin/python",
+      "args": [
+        "/home/mewtwo/MCP/youtube-mcp/run_server.py"
+      ],
+      "env": {
+        "YOUTUBE_API_KEY": "AIzaSyB-g-7IYtTqiolHZFI_oeTTnP5hnkEIcN4"
       }
     }
   }

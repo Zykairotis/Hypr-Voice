@@ -1,9 +1,0 @@
-fastapi
-uvicorn
-faster-whisper
-torch
-websockets
-requests
-sounddevice
-numpy
-ffmpeg-python

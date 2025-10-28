@@ -1,0 +1,53 @@
+# WhisperLive Configuration for Hypr-Voice
+
+# Server Settings
+server:
+  host: "localhost"
+  port: 9090
+  max_clients: 4
+  max_connection_time: 600  # 10 minutes
+
+# Backend Configuration
+backend:
+  type: "faster_whisper"  # Options: faster_whisper, tensorrt, openvino
+  model_path: "openai/whisper-large-v3-turbo"  # Will auto-convert to INT8 CT2 format
+  device: "cuda"  # Options: cpu, cuda
+  language: "auto"  # Auto-detect language
+  translate: false  # Don't translate to English by default
+
+# Performance Settings
+performance:
+  omp_num_threads: 1  # Reduced for GPU (less CPU needed)
+  cache_path: "/tmp/whisper-live-cache"
+  audio_chunk_size: 2048
+  sample_rate: 16000
+
+# Logging
+logging:
+  level: "INFO"  # Options: DEBUG, INFO, WARNING, ERROR
+  file: "/tmp/whisper-live-hypr-voice.log"
+
+# Hypr-Voice Integration
+hypr_voice:
+  enabled: true
+  socket_path: "/tmp/hypr-voice-whisper.sock"
+  vad_enabled: true  # Voice Activity Detection
+  vad_threshold: 0.1  # Lower = more sensitive (0.1 for testing, 0.5 normal)
+  min_speech_duration: 0.3  # seconds
+  max_silence_duration: 1.5  # seconds
+
+# Audio Settings for Hyprland
+audio:
+  input_device: "GA102 High Definition Audio Controller Digital Stereo (HDMI)"  # GPU HDMI audio input
+  pulseaudio_source: "alsa_output.pci-0000_2d_00.1.hdmi-stereo.monitor"  # PulseAudio monitor source
+  device_index: null  # Not using index, using device name instead
+  sample_rate: 16000
+  channels: 1
+  format: "s16le"
+  buffer_size: 1024
+
+# Model Settings
+model:
+  download_root: "/tmp/whisper-models"
+  local_files_only: false
+  compute_type: "int8_float16"  # GPU INT8 quantization: lower VRAM, faster inference
