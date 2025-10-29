@@ -1,0 +1,101 @@
+# WhisperLive Hybrid Configuration for Hypr-Voice
+
+# Server Settings
+server:
+  host: "0.0.0.0"  # Listen on all interfaces for hybrid mode
+  port: 9090
+  max_clients: 10  # Support more clients with hybrid approach
+  max_connection_time: 3600  # 1 hour for longer sessions
+
+# Backend Configuration
+backend:
+  type: "faster_whisper"  # Options: faster_whisper, tensorrt, openvino
+  model_path: "openai/whisper-large-v3-turbo"  # Will auto-convert to INT8 CT2 format
+  device: "cuda"  # Options: cpu, cuda
+  language: "auto"  # Auto-detect language
+  translate: false  # Don't translate to English by default
+
+# Performance Settings
+performance:
+  omp_num_threads: 1  # Reduced for GPU (less CPU needed)
+  cache_path: "/tmp/whisper-live-cache"
+  audio_chunk_size: 2048
+  sample_rate: 16000
+
+# Logging
+logging:
+  level: "INFO"  # Options: DEBUG, INFO, WARNING, ERROR
+  file: "/tmp/whisper-live-hypr-voice.log"
+
+# Hypr-Voice Integration
+hypr_voice:
+  enabled: true
+  socket_path: "/tmp/hypr-voice-whisper.sock"
+  vad_enabled: true  # Voice Activity Detection
+  vad_threshold: 0.1  # Lower = more sensitive (0.1 for testing, 0.5 normal)
+  min_speech_duration: 0.3  # seconds
+  max_silence_duration: 1.5  # seconds
+
+# Audio Settings for Hyprland
+audio:
+  input_device: "GA102 High Definition Audio Controller Digital Stereo (HDMI)"  # GPU HDMI audio input
+  pulseaudio_source: "alsa_output.pci-0000_2d_00.1.hdmi-stereo.monitor"  # PulseAudio monitor source
+  device_index: null  # Not using index, using device name instead
+  sample_rate: 16000
+  channels: 1
+  format: "s16le"
+  buffer_size: 1024
+
+# Model Settings
+model:
+  download_root: "/tmp/whisper-models"
+  local_files_only: false
+  compute_type: "int8_float16"  # GPU INT8 quantization: lower VRAM, faster inference
+  num_workers: 2
+  cpu_threads: 4
+
+# Hybrid Mode Settings
+hybrid:
+  enabled: true
+  protocol: "both"  # Options: websocket, rest, both
+  rest_api:
+    enabled: true
+    max_upload_size: 500  # MB
+    allowed_formats: ["wav", "mp3", "mp4", "mkv", "flac", "m4a", "ogg", "webm"]
+    job_queue: true
+    cleanup_after: 3600  # seconds
+  websocket:
+    enabled: true
+    heartbeat_interval: 30  # seconds
+    max_message_size: 10  # MB
+  shared_model: true  # Share model instance between REST and WebSocket
+
+# API Settings
+api:
+  cors_origins: ["*"]  # Allow all origins for testing
+  authentication: false  # No auth for now
+  rate_limiting: false
+  docs_enabled: true  # Enable FastAPI docs at /docs
+
+# Custom Vocabulary Enhancement
+vocabulary:
+  enabled: true
+  config_path: "config/vocabulary.yaml"
+  enhancement_method: "prompt_engineering"
+  custom_words:
+    - "YourCustomTerm"
+    - "YourAppName"
+    - "YourTechnicalWord"
+  prompt_context: "Focus on accurate transcription of technical terms including: React, TypeScript, Docker, Kubernetes, Git, npm, Python, JavaScript, API, REST, GraphQL, and user-defined terms."
+
+# CTranslate2 Settings (for future optimization)
+ctranslate2:
+  inter_threads: 1
+  intra_threads: 4
+  beam_size: 3
+  patience: 1.0
+  length_penalty: 1.0
+  temperature: 0.0
+  compression_ratio_threshold: 2.4
+  log_prob_threshold: -1.0
+  no_speech_threshold: 0.6

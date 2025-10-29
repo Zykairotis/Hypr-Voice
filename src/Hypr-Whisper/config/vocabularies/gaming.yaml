@@ -1,0 +1,109 @@
+# Gaming-specific vocabulary
+# For games and gaming applications
+
+name: "Gaming"
+description: "Vocabulary for gaming and entertainment"
+
+keywords:
+  # Game genres
+  genres:
+    - "RPG"
+    - "MMORPG"
+    - "FPS"
+    - "MOBA"
+    - "RTS"
+    - "turn-based"
+    - "battle royale"
+    - "sandbox"
+    - "simulation"
+    - "strategy"
+    - "puzzle"
+    - "platformer"
+    - "fighting"
+    - "racing"
+    - "sports"
+
+  # Gaming terms
+  gaming_terms:
+    - "noob"
+    - "pro"
+    - "nerf"
+    - "buff"
+    - "meta"
+    - "OP"
+    - "DPS"
+    - "tank"
+    - "healer"
+    - "support"
+    - "carry"
+    - "gank"
+    - "farm"
+    - "grind"
+    - "loot"
+    - "raid"
+    - "dungeon"
+    - "quest"
+    - "exp"
+    - "level up"
+    - "skill tree"
+
+  # Popular games
+  games:
+    - "World of Warcraft"
+    - "League of Legends"
+    - "Dota 2"
+    - "Counter-Strike"
+    - "Valorant"
+    - "Overwatch"
+    - "Fortnite"
+    - "Minecraft"
+    - "Elden Ring"
+    - "The Witcher"
+    - "Skyrim"
+    - "Fallout"
+    - "Cyberpunk"
+    - "Grand Theft Auto"
+    - "Red Dead Redemption"
+
+  # Technical gaming terms
+  technical:
+    - "FPS"
+    - "ping"
+    - "latency"
+    - "server"
+    - "client"
+    - "matchmaking"
+    - "ranked"
+    - "casual"
+    - "patch"
+    - "update"
+    - "beta"
+    - "alpha"
+    - "early access"
+    - "DLC"
+    - "expansion"
+    - "season pass"
+
+# Application patterns
+applications:
+  window_classes:
+    - "steam"
+    - "lutris"
+    - "heroic"
+    - "bottles"
+    - "wine"
+    - "proton"
+    - "minecraft"
+    - "league-client"
+    - "valorant"
+    - "csgo"
+
+# Context-specific prompts
+prompts:
+  initial: |
+    This is a gaming context. Please accurately transcribe gaming terminology including:
+    game genres (RPG, FPS, MOBA, etc.),
+    gaming slang (nerf, buff, meta, OP, etc.),
+    game titles, and technical terms (FPS, ping, latency, etc.).
+
+  fallback: "Focus on gaming terminology and slang."

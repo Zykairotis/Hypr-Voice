@@ -1,0 +1,142 @@
+# Development-specific vocabulary
+# For code editors, IDEs, and terminals
+
+name: "Development"
+description: "Vocabulary for software development and programming"
+
+keywords:
+  # Programming languages
+  languages:
+    - "javascript"
+    - "typescript"
+    - "python"
+    - "java"
+    - "c++"
+    - "csharp"
+    - "php"
+    - "ruby"
+    - "go"
+    - "rust"
+    - "swift"
+    - "kotlin"
+    - "scala"
+    - "dart"
+    - "elixir"
+    - "haskell"
+    - "lua"
+    - "perl"
+    - "r"
+    - "matlab"
+
+  # Frameworks and libraries
+  frameworks:
+    - "react"
+    - "vue"
+    - "angular"
+    - "svelte"
+    - "next.js"
+    - "nuxt.js"
+    - "express"
+    - "django"
+    - "flask"
+    - "rails"
+    - "spring"
+    - "laravel"
+    - "symfony"
+    - "tensorflow"
+    - "pytorch"
+    - "keras"
+    - "pandas"
+    - "numpy"
+    - "scipy"
+
+  # Tools and technologies
+  tools:
+    - "git"
+    - "github"
+    - "gitlab"
+    - "docker"
+    - "kubernetes"
+    - "terraform"
+    - "ansible"
+    - "jenkins"
+    - "webpack"
+    - "babel"
+    - "eslint"
+    - "prettier"
+    - "npm"
+    - "yarn"
+    - "pip"
+    - "conda"
+    - "maven"
+    - "gradle"
+
+  # Programming concepts
+  concepts:
+    - "algorithm"
+    - "data structure"
+    - "object-oriented"
+    - "functional"
+    - "asynchronous"
+    - "callback"
+    - "promise"
+    - "async/await"
+    - "closure"
+    - "recursion"
+    - "inheritance"
+    - "polymorphism"
+    - "encapsulation"
+    - "abstraction"
+    - "interface"
+    - "abstract class"
+    - "design pattern"
+
+  # Commands and operations
+  commands:
+    - "compile"
+    - "build"
+    - "test"
+    - "debug"
+    - "deploy"
+    - "refactor"
+    - "merge"
+    - "branch"
+    - "commit"
+    - "push"
+    - "pull"
+    - "checkout"
+    - "rebase"
+    - "cherry-pick"
+    - "stash"
+    - "clone"
+    - "fork"
+    - "pull-request"
+
+# Application patterns
+applications:
+  window_classes:
+    - "code"
+    - "Code"
+    - "sublime_text"
+    - "atom"
+    - "vim"
+    - "nvim"
+    - "emacs"
+    - "intellij-idea-ce"
+    - "pycharm"
+    - "webstorm"
+    - "Alacritty"
+    - "kitty"
+    - "gnome-terminal"
+    - "konsole"
+
+# Context-specific prompts
+prompts:
+  initial: |
+    This is a software development context. Please accurately transcribe technical terms including:
+    programming languages (JavaScript, TypeScript, Python, Java, etc.),
+    frameworks (React, Vue, Django, Express, etc.),
+    tools (Git, Docker, Kubernetes, npm, etc.),
+    and programming concepts (algorithms, data structures, OOP, etc.).
+
+  fallback: "Focus on technical and programming terminology."

@@ -1,0 +1,126 @@
+# Productivity and business vocabulary
+# For office applications, documentation, and communication
+
+name: "Productivity"
+description: "Vocabulary for productivity and business applications"
+
+keywords:
+  # Business terms
+  business:
+    - "meeting"
+    - "presentation"
+    - "deadline"
+    - "milestone"
+    - "deliverable"
+    - "stakeholder"
+    - "KPI"
+    - "ROI"
+    - "quarterly"
+    - "annual"
+    - "budget"
+    - "forecast"
+    - "strategy"
+    - "roadmap"
+    - "timeline"
+    - "scope"
+    - "requirements"
+    - "specifications"
+
+  # Project management
+  project_management:
+    - "agile"
+    - "scrum"
+    - "sprint"
+    - "backlog"
+    - "standup"
+    - "retrospective"
+    - "user story"
+    - "epic"
+    - "task"
+    - "subtask"
+    - "workflow"
+    - "pipeline"
+    - "kanban"
+    - "burndown"
+    - "velocity"
+    - "iteration"
+
+  # Documentation terms
+  documentation:
+    - "specification"
+    - "documentation"
+    - "manual"
+    - "guide"
+    - "tutorial"
+    - "walkthrough"
+    - "FAQ"
+    - "readme"
+    - "changelog"
+    - "license"
+    - "terms"
+    - "policy"
+    - "procedure"
+    - "protocol"
+    - "standard"
+
+  # Communication terms
+  communication:
+    - "email"
+    - "calendar"
+    - "appointment"
+    - "schedule"
+    - "agenda"
+    - "minutes"
+    - "action items"
+    - "follow-up"
+    - "reminder"
+    - "notification"
+    - "announcement"
+    - "broadcast"
+    - "bulletin"
+
+  # Software applications
+  applications:
+    - "Microsoft Office"
+    - "Word"
+    - "Excel"
+    - "PowerPoint"
+    - "Outlook"
+    - "Google Docs"
+    - "Google Sheets"
+    - "Google Slides"
+    - "LibreOffice"
+    - "Notion"
+    - "Obsidian"
+    - "Evernote"
+    - "OneNote"
+    - "Slack"
+    - "Teams"
+    - "Zoom"
+    - "Discord"
+
+# Application patterns
+applications:
+  window_classes:
+    - "libreoffice"
+    - "soffice"
+    - "firefox"
+    - "chrome"
+    - "thunderbird"
+    - "evolution"
+    - "discord"
+    - "slack"
+    - "teams"
+    - "zoom"
+    - "obsidian"
+    - "notion"
+
+# Context-specific prompts
+prompts:
+  initial: |
+    This is a productivity/business context. Please accurately transcribe business terminology including:
+    project management terms (agile, scrum, sprint, etc.),
+    business concepts (KPI, ROI, stakeholders, etc.),
+    and productivity software names.
+
+  fallback: "Focus on business and productivity terminology."
