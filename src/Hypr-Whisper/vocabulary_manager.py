@@ -16,6 +16,14 @@ from difflib import SequenceMatcher
 from dataclasses import dataclass
 from loguru import logger
 
+# Import ContextManager
+try:
+    from context_manager import ContextManager
+    HAVE_CONTEXT_MANAGER = True
+except ImportError:
+    HAVE_CONTEXT_MANAGER = False
+    logger.warning("ContextManager not available, context extraction will be disabled")
+
 try:
     import psutil
     HAVE_PSUTIL = True
@@ -48,6 +56,12 @@ class VocabularyManager:
         self.current_app: Optional[str] = None
         self.current_vocabulary: Optional[str] = None
         self.active_keywords: Set[str] = set()
+
+        # Initialize ContextManager
+        if HAVE_CONTEXT_MANAGER:
+            self.context_manager = ContextManager()
+        else:
+            self.context_manager = None
 
         # Load configurations
         self.load_configurations()
@@ -128,17 +142,19 @@ class VocabularyManager:
             logger.error(f"Error detecting active application: {e}")
             return None
 
-    def match_vocabulary_to_application(self, app_name: str) -> Optional[str]:
+    def match_vocabulary_to_application(self, app_name: str, app_title: str = "") -> Optional[str]:
         """
-        Match application name to appropriate vocabulary.
+        Match application name to appropriate vocabulary using both class and title.
 
         Args:
             app_name: Window class name
+            app_title: Window title (optional)
 
         Returns:
             Vocabulary name or None if no match
         """
         app_name_lower = app_name.lower()
+        app_title_lower = app_title.lower()
 
         # Check direct matches in vocabulary configurations
         for vocab_name, vocab_config in self.vocabularies.items():
@@ -149,23 +165,21 @@ class VocabularyManager:
 
         # Check patterns in main config
         if 'applications' in self.main_config:
-            for app_config in self.main_config['applications'].values():
+            for app_key, app_config in self.main_config['applications'].items():
                 if 'window_class_patterns' in app_config:
                     for pattern in app_config['window_class_patterns']:
                         if pattern.lower() in app_name_lower:
-                            # Find corresponding vocabulary
-                            for vocab_name in app_config.keys():
-                                if vocab_name in self.vocabularies:
-                                    return vocab_name
+                            return app_key
 
         return None
 
-    def update_vocabulary(self, app_name: Optional[str] = None):
+    def update_vocabulary(self, app_name: Optional[str] = None, app_title: Optional[str] = None):
         """
         Update active vocabulary based on current application.
 
         Args:
             app_name: Optional application name override
+            app_title: Optional application title
         """
         if app_name is None:
             app_name = self.detect_active_application()
@@ -175,7 +189,7 @@ class VocabularyManager:
         # Find matching vocabulary
         vocab_name = None
         if app_name:
-            vocab_name = self.match_vocabulary_to_application(app_name)
+            vocab_name = self.match_vocabulary_to_application(app_name, app_title or "")
 
         # Fallback to global vocabulary
         if vocab_name is None:
@@ -219,10 +233,226 @@ class VocabularyManager:
                         if isinstance(words, list):
                             keywords.update(words)
 
+        # Add context-aware keywords from shell history and clipboard
+        if self.context_manager:
+            try:
+                commands = self.context_manager.get_shell_history(40)
+                clipboard = self.context_manager.get_clipboard_history(5)
+                context_vocab = self.context_manager.extract_vocabulary_from_context(
+                    commands, clipboard
+                )
+                keywords.update(context_vocab)
+                logger.debug(f"Added {len(context_vocab)} context-aware keywords")
+            except Exception as e:
+                logger.error(f"Error getting context-aware keywords: {e}")
+
+        return keywords
+
+    def get_initial_prompt(self, max_tokens: int = 200) -> str:
+        """
+        Build optimized initial_prompt for Whisper.
+        Format: comma-separated list (most effective pattern per research).
+        
+        Args:
+            max_tokens: Maximum tokens (default 200, max 224 for Whisper)
+        
+        Returns:
+            String under 224 tokens with top vocabulary terms
+        """
+        if not self.active_keywords:
+            return ""
+        
+        # Prioritize keywords (application-specific > context > global)
+        prioritized = self._prioritize_keywords()
+        
+        # Build comma-separated list (proven most effective)
+        # Conservative: 800 chars ≈ 200 tokens
+        prompt_parts = []
+        current_length = 0
+        MAX_CHARS = 800
+        
+        for keyword in prioritized:
+            # Add keyword if it fits
+            addition = f"{keyword}, "
+            if current_length + len(addition) > MAX_CHARS:
+                break
+            prompt_parts.append(keyword)
+            current_length += len(addition)
+        
+        # Format as comma-separated list (research-proven best practice)
+        prompt = ", ".join(prompt_parts)
+        
+        # Add period at end for proper formatting
+        if prompt:
+            prompt += "."
+        
+        logger.debug(f"Generated initial_prompt: {len(prompt)} chars, ~{len(prompt)//4} tokens, {len(prompt_parts)} terms")
+        
+        return prompt
+    
+    def get_contextual_prompt(
+        self,
+        previous_text: str = "",
+        max_words: int = 30,
+        include_vocabulary: bool = True
+    ) -> str:
+        """
+        Build context-aware prompt for better recognition of ANY words (not just vocabulary).
+        
+        This method improves on get_initial_prompt() by:
+        1. Including recent words from user's speech (continuity)
+        2. Shorter prompts (less hallucination risk)
+        3. Works for unknown words (not just pre-defined vocabulary)
+        
+        Research backing:
+        - Short prompts (15-30 words) optimal for WER + F1
+        - Recent context critical for coherence
+        - Comma-separated format most effective
+        
+        Args:
+            previous_text: Last confirmed transcription text
+            max_words: Maximum words in prompt (default 30, optimal 15-30)
+            include_vocabulary: Include custom vocabulary terms
+        
+        Returns:
+            Context-aware prompt string
+        """
+        prompt_words = []
+        
+        # PART 1: Recent context (for coherence and unknown words)
+        if previous_text:
+            # Extract significant words from last sentence
+            recent_words = previous_text.split()[-100:]  # Last 100 words
+            
+            # Filter for meaningful words (> 3 chars, alphanumeric)
+            significant = [
+                w for w in recent_words 
+                if len(w) > 3 and w.isalpha() and w.lower() not in {
+                    'that', 'this', 'with', 'from', 'have', 'been', 'were', 'would', 'could', 'should'
+                }
+            ]
+            
+            # Take last 5-8 significant words for immediate context
+            recent_context = significant[-8:] if len(significant) >= 8 else significant[-5:]
+            prompt_words.extend(recent_context)
+        
+        # PART 2: Custom vocabulary (if enabled and available)
+        if include_vocabulary and self.active_keywords:
+            # Prioritize vocabulary by:
+            # 1. Length (longer = more specific)
+            # 2. Application relevance
+            vocab_sorted = sorted(
+                self.active_keywords,
+                key=lambda x: (len(x), x.lower()),
+                reverse=True
+            )
+            
+            # Add vocabulary terms until we hit max_words
+            remaining_slots = max_words - len(prompt_words)
+            vocab_to_add = vocab_sorted[:remaining_slots]
+            prompt_words.extend(vocab_to_add)
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_words = []
+        for word in prompt_words:
+            if word.lower() not in seen:
+                seen.add(word.lower())
+                unique_words.append(word)
+        
+        # Limit to max_words
+        unique_words = unique_words[:max_words]
+        
+        # Format as comma-separated list (research-proven)
+        prompt = ", ".join(unique_words)
+        if prompt:
+            prompt += "."
+        
+        logger.debug(
+            f"Contextual prompt: {len(unique_words)} words, "
+            f"{len(prompt)} chars ({len(prompt)//4} tokens approx), "
+            f"context={len(recent_context if previous_text else [])} vocab={len(vocab_to_add) if include_vocabulary else 0}"
+        )
+        
+        return prompt
+    
+    def _prioritize_keywords(self) -> List[str]:
+        """
+        Prioritize keywords by importance.
+        Order: Application-specific > Context (shell/clipboard) > Global
+        
+        Returns:
+            List of prioritized unique keywords
+        """
+        prioritized = []
+        
+        # 1. Application-specific vocabulary (highest priority)
+        if self.current_vocabulary and self.current_vocabulary != 'global':
+            app_keywords = self._get_app_specific_keywords()
+            prioritized.extend(app_keywords[:20])  # Top 20 app terms
+        
+        # 2. Context keywords (shell history, clipboard)
+        if self.context_manager:
+            try:
+                context_vocab = self.context_manager.get_shell_history(40)
+                context_keywords = self.context_manager.extract_vocabulary_from_context(
+                    context_vocab, 
+                    self.context_manager.get_clipboard_history(5)
+                )
+                prioritized.extend(list(context_keywords)[:15])  # Top 15 context terms
+            except Exception as e:
+                logger.debug(f"Error getting context keywords: {e}")
+        
+        # 3. Global technical terms (lower priority)
+        global_keywords = self._get_global_keywords()
+        prioritized.extend(global_keywords[:15])  # Top 15 global terms
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        unique = []
+        for kw in prioritized:
+            if kw not in seen:
+                seen.add(kw)
+                unique.append(kw)
+        
+        return unique
+    
+    def _get_app_specific_keywords(self) -> List[str]:
+        """Extract keywords from current application vocabulary."""
+        keywords = []
+        
+        if self.current_vocabulary in self.main_config.get('applications', {}):
+            app_vocab = self.main_config['applications'][self.current_vocabulary].get('vocabulary', {})
+            
+            # Flatten all vocabulary categories
+            for category_words in app_vocab.values():
+                if isinstance(category_words, list):
+                    keywords.extend(category_words)
+        
+        return keywords
+    
+    def _get_global_keywords(self) -> List[str]:
+        """Extract global technical terms."""
+        keywords = []
+        
+        if 'global' in self.main_config:
+            global_vocab = self.main_config['global']
+            
+            # Extract technical terms
+            if 'technical_terms' in global_vocab:
+                keywords.extend(global_vocab['technical_terms'][:20])
+            
+            # Extract programming keywords
+            if 'programming' in global_vocab:
+                prog = global_vocab['programming']
+                if 'keywords' in prog:
+                    keywords.extend(prog['keywords'][:10])
+        
         return keywords
 
     def get_enhanced_prompt(self, base_prompt: Optional[str] = None) -> str:
         """
+        DEPRECATED: Use get_initial_prompt() instead.
         Generate enhanced prompt with vocabulary context.
 
         Args:

@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 class HybridWhisperClient:
     """Client for both REST API and WebSocket transcription."""
     
-    def __init__(self, server_url="http://localhost:9090"):
+    def __init__(self, server_url="http://localhost:9099"):
         self.server_url = server_url
         self.ws_url = server_url.replace("http://", "ws://").replace("https://", "wss://")
         self.session_id = None
@@ -411,7 +411,7 @@ def test_audio_device(device_id, duration=3.0):
 # ============================================================================
 def main():
     parser = argparse.ArgumentParser(description="Hybrid Whisper Transcription Client")
-    parser.add_argument("--server", default="http://localhost:9090", help="Server URL")
+    parser.add_argument("--server", default="http://localhost:9099", help="Server URL")
     parser.add_argument("--list-devices", action="store_true", help="List audio devices")
     parser.add_argument("--stream", action="store_true", help="Stream from microphone via WebSocket")
     parser.add_argument("--device", type=int, help="Audio device ID for streaming")

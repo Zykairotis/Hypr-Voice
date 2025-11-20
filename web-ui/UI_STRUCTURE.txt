@@ -1,0 +1,217 @@
+
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                         HYPR-VOICE WEB UI STRUCTURE                           ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  HEADER (Sticky)                                                            │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │  🔊 Hypr-Voice Control Panel        [Whisper: ●] [Agent: ●]         │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  MAIN CONTENT                                                               │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │  [🎤 Hypr-Whisper]  [🤖 Hypr-Voice Agent]                            │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │  ACTIVE TAB CONTENT                                                  │   │
+│  │                                                                      │   │
+│  │  ╔══════════════════════════════════════════════════════════════╗   │   │
+│  │  ║  SERVER STATUS CARD (Glassmorphic)                           ║   │   │
+│  │  ║  ┌────────────────────────────────────────────────────────┐  ║   │   │
+│  │  ║  │  ● Online  │  2 Clients  │  1h 23m  │  45.3ms         │  ║   │   │
+│  │  ║  └────────────────────────────────────────────────────────┘  ║   │   │
+│  │  ╚══════════════════════════════════════════════════════════════╝   │   │
+│  │                                                                      │   │
+│  │  ╔══════════════════════════════════════════════════════════════╗   │   │
+│  │  ║  CONFIGURATION CARD (Glassmorphic)                           ║   │   │
+│  │  ║  ┌────────────────────────────────────────────────────────┐  ║   │   │
+│  │  ║  │  [🎵 Audio] [⚙️  Model] [📚 Vocabulary]                │  ║   │   │
+│  │  ║  └────────────────────────────────────────────────────────┘  ║   │   │
+│  │  ║                                                              ║   │   │
+│  │  ║  ┌────────────────────────────────────────────────────────┐  ║   │   │
+│  │  ║  │  SELECTED TAB CONTENT                                  │  ║   │   │
+│  │  ║  │                                                        │  ║   │   │
+│  │  ║  │  • Input Device Selector                              │  ║   │   │
+│  │  ║  │  • Sample Rate Slider                                 │  ║   │   │
+│  │  ║  │  • Channel Selection                                  │  ║   │   │
+│  │  ║  │  • Buffer Size                                        │  ║   │   │
+│  │  ║  │  • Toggles & Options                                  │  ║   │   │
+│  │  ║  │                                                        │  ║   │   │
+│  │  ║  │  [💾 Save Configuration]                              │  ║   │   │
+│  │  ║  └────────────────────────────────────────────────────────┘  ║   │   │
+│  │  ╚══════════════════════════════════════════════════════════════╝   │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  FOOTER STATUS BAR (Sticky)                                                │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │  ● Whisper: online  │  ● Agent: online  │  Port 9090 • Port 8922    │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                        HYPR-WHISPER TAB BREAKDOWN                             ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
+
+┌─ AUDIO TAB ─────────────────────────────────────────────────────────────────┐
+│  • 🎤 Input Device Selector                  [Refresh Button]               │
+│  • 🔊 Sample Rate Slider                     [16000 Hz]                     │
+│  • 📻 Channels (Mono/Stereo)                 [Mono] [Stereo]                │
+│  • 📊 Buffer Size Slider                     [1024]                         │
+│  • 💾 Save Recordings                        [Toggle]                       │
+│  • 🗑️  Auto Cleanup                          [Toggle]                       │
+│  • [💾 Save Audio Configuration]                                            │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─ MODEL TAB ─────────────────────────────────────────────────────────────────┐
+│  • 🤖 Whisper Model Selector                 [large-v3-turbo ⭐]            │
+│  • 💻 Device (CUDA/CPU)                      [⚡ CUDA (GPU)]                │
+│  • 🔧 Compute Type                           [INT8 + FP16]                  │
+│  • 🌍 Language                               [Auto Detect]                  │
+│  • 🔄 Translate to English                   [Toggle]                       │
+│  • ⚙️  Workers Slider                        [2]                            │
+│  • 🧵 CPU Threads Slider                     [4]                            │
+│  • 🎙️  VAD Enabled                           [Toggle]                       │
+│  • 🎚️  VAD Threshold                         [0.1]                          │
+│  • ⏱️  Min Speech Duration                   [0.3s]                         │
+│  • ⏸️  Max Silence Duration                  [1.5s]                         │
+│  • [💾 Save Model Configuration]                                            │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─ VOCABULARY TAB ────────────────────────────────────────────────────────────┐
+│  • 📚 Vocabulary Enhancement                 [Toggle]                       │
+│  • ➕ Add Custom Word Input                  [+ Button]                     │
+│  • 🏷️  Custom Word Tags                      [word1 ×] [word2 ×] ...       │
+│  • 📂 Category Accordions:                                                  │
+│    ├─ 💻 Technical Terms                     [Toggle] [89 words]           │
+│    ├─ ⌨️  Programming                        [Toggle] [45 words]           │
+│    └─ 🖥️  System Admin                       [Toggle] [67 words]           │
+│  • 📊 Statistics: 12 Custom | 3 Active | 201 Total                          │
+│  • [💾 Save Vocabulary Configuration]                                       │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                       HYPR-VOICE AGENT TAB BREAKDOWN                          ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
+
+┌─ AGENTS TAB ────────────────────────────────────────────────────────────────┐
+│  • ➕ Create New Agent Input                 [+ Create]                     │
+│  • 🤖 Agent Cards:                                                          │
+│    ┌───────────────────────────────────────────────────────────────────┐   │
+│    │  🤖 Agent Name            [● running]                             │   │
+│    │  claude-3-5-sonnet • Dec 30, 2024                                │   │
+│    │                           [💬 Chat] [Actions ▼]                   │   │
+│    └───────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─ VOICE TAB ─────────────────────────────────────────────────────────────────┐
+│  • 🔊 Voice Provider Cards (selectable):                                    │
+│    ┌─ Kokoro TTS ──────────────────────────┐ [Local]                       │
+│    ├─ ElevenLabs ─────────────────────────┐ [Cloud]                       │
+│    └─ Deepgram ───────────────────────────┘ [Cloud]                       │
+│  • 🎤 Voice Selector                        [Bella (Female)]               │
+│  • 🎭 Preset Buttons:                       [💼] [😊] [🔧] [📖]             │
+│  • 🏃 Speed Slider                          [1.00x]                        │
+│  • 🎵 Pitch Slider                          [1.00]                         │
+│  • 🔄 Auto Fallback                         [Toggle]                       │
+│  • [🔊 Test Voice] [💾 Save Configuration]                                 │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─ MCP TAB ───────────────────────────────────────────────────────────────────┐
+│  • 📊 Active Servers: 4/6                                                   │
+│  • 🖥️  Server Cards:                                                        │
+│    ┌───────────────────────────────────────────────────────────────────┐   │
+│    │  📁 filesystem          [● running]             [⏹️] [Toggle]     │   │
+│    │  File system operations MCP server                               │   │
+│    └───────────────────────────────────────────────────────────────────┘   │
+│  • 📈 Statistics: 4 Running | 2 Stopped | 0 Errors                          │
+│  • [💾 Save MCP Configuration]                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─ SKILLS TAB ────────────────────────────────────────────────────────────────┐
+│  • 🎯 Core Skills (2/2 enabled):                                            │
+│    ├─ 📄 File Operations                    [● Active] [Toggle]            │
+│    └─ ⌨️  Bash Execution                     [● Active] [Toggle]            │
+│  • 🎙️  Voice Skills (1/1 enabled):                                          │
+│    └─ 🔊 Voice Synthesis                     [● Active] [Toggle]            │
+│  • ⚡ Advanced Skills (1/2 enabled):                                        │
+│    ├─ 🤖 Hierarchical Agents                 [● Active] [Toggle]            │
+│    └─ 🔍 Web Search                          [Inactive] [Toggle]            │
+│  • 📊 Statistics: 4 Active | 5 Total | 3 Categories                         │
+│  • [💾 Save Skills Configuration]                                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                            DESIGN SYSTEM                                      ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
+
+COLORS:
+  Background:    #000000 (Pure Black AMOLED)
+  Primary:       Purple (oklch(0.65 0.25 270))
+  Foreground:    White 95%
+  Border:        White 8%
+  Muted:         White 60%
+
+GLASS EFFECTS:
+  backdrop-blur: 12-24px
+  background:    Semi-transparent (25-40%)
+  border:        Subtle (8-12% opacity)
+  glow:          Purple shadow on hover
+
+SPACING:
+  Card padding:  1rem (16px)
+  Gap:           0.75rem (12px)
+  Section gap:   1.5rem (24px)
+
+TYPOGRAPHY:
+  Font:          Geist Sans
+  Base:          16px
+  Headings:      Bold, 1.25-2rem
+  Body:          Regular, 0.875-1rem
+  Muted:         0.875rem
+
+COMPONENTS:
+  Cards:         Glassmorphic with hover effect
+  Buttons:       Rounded, with glow on hover
+  Sliders:       Purple accent, value badge
+  Switches:      Smooth transition
+  Badges:        Status-based colors
+  Inputs:        Glass background, focus ring
+
+
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                         TECHNICAL STACK                                       ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
+
+FRONTEND:
+  Framework:     Next.js 14 (App Router)
+  Language:      TypeScript 5
+  Styling:       Tailwind CSS 4
+  Components:    shadcn/ui
+  Icons:         Lucide React
+  Notifications: Sonner
+
+BACKEND:
+  Framework:     FastAPI
+  Language:      Python 3.10+
+  HTTP Client:   aiohttp
+  Validation:    Pydantic
+  Config:        PyYAML
+
+ARCHITECTURE:
+  Frontend Port: 3000
+  Backend Port:  8080
+  Whisper Port:  9090
+  Agent Port:    8922
+
+  Browser ──► Next.js ──► FastAPI Bridge ──┬──► Hypr-Whisper
+                                           └──► Hypr-Voice Agent
+

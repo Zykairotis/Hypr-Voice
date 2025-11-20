@@ -1,0 +1,103 @@
+# Context Configuration for Hypr-Voice
+# Context provides detailed information about the active environment
+# Unlike vocabulary (which contains only words), context includes metadata and application state
+
+# Application Detection Settings
+application_detection:
+  enabled: true
+  method: hyprland  # hyprland, x11, or manual
+  update_interval: 200  # milliseconds
+  fallback_behavior: global  # What to do when detection fails
+
+# Shell History Context
+shell_history:
+  enabled: true
+  count: 40  # Number of recent commands to analyze
+  min_keyword_length: 5  # Minimum length for extracted keywords
+  sources:
+    - ~/.zsh_history
+    - ~/.bash_history
+  exclude_patterns:
+    - "^cd "
+    - "^ls "
+    - "^pwd$"
+    - "^clear$"
+    - "^exit$"
+  extract:
+    - command_names
+    - file_paths
+    - flags_and_options
+    - technical_terms
+
+# Clipboard History Context
+clipboard_history:
+  enabled: true
+  count: 5  # Number of recent clipboard entries
+  max_entry_length: 500  # Maximum characters per entry
+  tool: cliphist  # cliphist or wl-paste
+  fallback: wl-paste
+  extract:
+    - technical_terms
+    - camel_case_words
+    - snake_case_words
+    - file_names
+    - urls
+
+# Window Context Extraction
+window_context:
+  enabled: true
+  extract_from_title: true
+  extract_from_class: true
+  patterns:
+    file_extensions: true  # Extract .py, .js, etc.
+    paths: true  # Extract /path/to/file
+    technical_terms: true  # CamelCase, snake_case, etc.
+
+# Context Hooks (For Future Integration)
+# These will be implemented when the Claude SDK agent is ready
+hooks:
+  enabled: false  # Not yet implemented
+  browser:
+    enabled: false
+    extract:
+      - page_title
+      - url
+      - active_tab_content
+      - form_fields
+  editor:
+    enabled: false
+    extract:
+      - current_file
+      - open_files
+      - recent_edits
+      - git_branch
+  terminal:
+    enabled: false
+    extract:
+      - current_directory
+      - active_processes
+      - environment_variables
+  communication:
+    enabled: false
+    extract:
+      - chat_context
+      - participants
+      - message_thread
+
+# Context Processing
+processing:
+  merge_strategy: union  # How to combine context sources (union, intersection, weighted)
+  priority:  # Priority order for context sources
+    - window_context
+    - shell_history
+    - clipboard_history
+    - hooks
+  deduplication: true
+  max_context_items: 200  # Maximum context items to track
+
+# Logging
+logging:
+  level: INFO  # DEBUG, INFO, WARNING, ERROR
+  log_context_updates: true
+  log_extraction: false  # Very verbose
+

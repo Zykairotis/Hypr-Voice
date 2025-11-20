@@ -41,15 +41,15 @@ chmod +x scripts/start_hybrid_server.sh
 
 ### 3. Access Endpoints
 
-- **REST API**: http://localhost:9090
-- **API Docs**: http://localhost:9090/docs
-- **WebSocket**: ws://localhost:9090/ws/{session_id}
+- **REST API**: http://localhost:9099
+- **API Docs**: http://localhost:9099/docs
+- **WebSocket**: ws://localhost:9099/ws/{session_id}
 
 ## 📡 REST API Usage
 
 ### Create Session
 ```bash
-curl -X POST http://localhost:9090/sessions \
+curl -X POST http://localhost:9099/sessions \
   -H "Content-Type: application/json" \
   -d '{"language": "en", "beam_size": 3, "vad_filter": true}'
 ```
@@ -57,23 +57,23 @@ curl -X POST http://localhost:9090/sessions \
 ### Upload File for Transcription
 ```bash
 # Upload audio/video file
-curl -X POST http://localhost:9090/sessions/{session_id}/transcribe \
+curl -X POST http://localhost:9099/sessions/{session_id}/transcribe \
   -F "audio_file=@/path/to/file.mp4"
 ```
 
 ### Get Transcription Result
 ```bash
-curl http://localhost:9090/sessions/{session_id}
+curl http://localhost:9099/sessions/{session_id}
 ```
 
 ### List All Sessions
 ```bash
-curl http://localhost:9090/sessions
+curl http://localhost:9099/sessions
 ```
 
 ### Delete Session
 ```bash
-curl -X DELETE http://localhost:9090/sessions/{session_id}
+curl -X DELETE http://localhost:9099/sessions/{session_id}
 ```
 
 ## 🔌 WebSocket Usage
@@ -84,7 +84,7 @@ curl -X DELETE http://localhost:9090/sessions/{session_id}
 from hybrid_client import HybridWhisperClient
 
 # Initialize client
-client = HybridWhisperClient("http://localhost:9090")
+client = HybridWhisperClient("http://localhost:9099")
 
 # Stream from microphone
 import asyncio
@@ -115,7 +115,7 @@ Edit `config/config.yaml`:
 # Server Settings
 server:
   host: "0.0.0.0"
-  port: 9090
+  port: 9099
   max_clients: 10
 
 # Hybrid Mode
@@ -170,14 +170,14 @@ backend:
 ### Test REST API
 ```bash
 # Create session
-SESSION_ID=$(curl -s -X POST http://localhost:9090/sessions | jq -r '.session_id')
+SESSION_ID=$(curl -s -X POST http://localhost:9099/sessions | jq -r '.session_id')
 
 # Upload file
-curl -X POST http://localhost:9090/sessions/$SESSION_ID/transcribe \
+curl -X POST http://localhost:9099/sessions/$SESSION_ID/transcribe \
   -F "audio_file=@test.wav"
 
 # Get result
-curl http://localhost:9090/sessions/$SESSION_ID
+curl http://localhost:9099/sessions/$SESSION_ID
 ```
 
 ### Test WebSocket
@@ -190,7 +190,7 @@ import uuid
 
 async def test():
     session_id = str(uuid.uuid4())
-    uri = f"ws://localhost:9090/ws/{session_id}"
+    uri = f"ws://localhost:9099/ws/{session_id}"
     
     async with websockets.connect(uri) as ws:
         # Send test audio
@@ -209,7 +209,7 @@ asyncio.run(test())
 ### Server won't start
 ```bash
 # Check if port is in use
-lsof -i :9090
+lsof -i :9099
 
 # Check logs
 tail -f /tmp/hybrid-whisper-server.log
@@ -239,15 +239,15 @@ python hybrid_client.py --test-audio 0 --test-duration 3
 ## 📝 API Documentation
 
 When server is running, visit:
-- **Interactive Docs**: http://localhost:9090/docs
-- **OpenAPI Schema**: http://localhost:9090/openapi.json
+- **Interactive Docs**: http://localhost:9099/docs
+- **OpenAPI Schema**: http://localhost:9099/openapi.json
 
 ## 🔗 Integration with Hypr-Voice
 
 This hybrid server is designed to integrate with the Hypr-Voice system:
 
 1. **Shared Virtual Environment**: Uses `/home/mewtwo/Zykairotis/Hypr-Voice/.venv`
-2. **Compatible Port**: Runs on port 9090 (doesn't conflict with Agent on 8922)
+2. **Compatible Port**: Runs on port 9099 (doesn't conflict with Agent on 8922)
 3. **Audio Config**: Supports GA102 HDMI monitor input
 4. **Model Optimization**: INT8 quantization for faster inference
 
@@ -255,7 +255,7 @@ This hybrid server is designed to integrate with the Hypr-Voice system:
 
 ### Check active sessions
 ```bash
-curl http://localhost:9090/sessions | python -m json.tool
+curl http://localhost:9099/sessions | python -m json.tool
 ```
 
 ### Server health

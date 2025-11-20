@@ -8,7 +8,7 @@
 from wltype_integration import FileTyper
 
 # Use in your own script
-typer = FileTyper(server_url="http://localhost:9090")
+typer = FileTyper(server_url="http://localhost:9099")
 result = typer.transcribe_and_type(
     filepath="audio.mp3",
     language="en",
@@ -344,7 +344,7 @@ Create `~/.config/wltype/config.sh`:
 
 ```bash
 #!/bin/bash
-export WLTYPE_SERVER="http://localhost:9090"
+export WLTYPE_SERVER="http://localhost:9099"
 export WLTYPE_DEVICE="0"
 export WLTYPE_TYPING_SPEED="0.05"
 export WLTYPE_REFRESH_INTERVAL="3"
@@ -369,7 +369,7 @@ python wltype_integration.py \
 # Robust transcription script
 
 check_server() {
-    curl -s http://localhost:9090/health > /dev/null
+    curl -s http://localhost:9099/health > /dev/null
     return $?
 }
 
@@ -407,23 +407,23 @@ python wltype_integration.py --file important.mp3 --type-speed 8
 # Use remote server
 python wltype_integration.py \
   --realtime \
-  --server http://192.168.1.100:9090 \
+  --server http://192.168.1.100:9099 \
   --device 0
 
 # Or with file mode
 python wltype_integration.py \
   --file audio.mp3 \
-  --server http://192.168.1.100:9090
+  --server http://192.168.1.100:9099
 ```
 
 ### SSH Tunnel for Security
 
 ```bash
 # Create SSH tunnel
-ssh -L 9090:localhost:9090 user@remote-server
+ssh -L 9099:localhost:9099 user@remote-server
 
 # Then use local connection
-python wltype_integration.py --realtime --server http://localhost:9090
+python wltype_integration.py --realtime --server http://localhost:9099
 ```
 
 ---

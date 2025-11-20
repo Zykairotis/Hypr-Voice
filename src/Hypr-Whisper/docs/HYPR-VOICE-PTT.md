@@ -205,7 +205,7 @@ systemctl --user status hypr-voice.service
 
 # With options
 ./hypr-voice-type.py daemon --save-recordings
-./hypr-voice-type.py daemon --server http://localhost:9090
+./hypr-voice-type.py daemon --server http://localhost:9099
 ```
 
 ## Architecture
@@ -214,7 +214,7 @@ systemctl --user status hypr-voice.service
 ┌─────────────┐     ┌──────────────┐     ┌─────────────┐
 │  Hyprland   │────►│  PTT Daemon  │────►│   Whisper   │
 │  Keybind    │     │  (Python)    │     │   Server    │
-│  (F9)       │     │              │     │  Port 9090  │
+│  (F9)       │     │              │     │  Port 9099  │
 └─────────────┘     └──────────────┘     └─────────────┘
                             │
                             ▼
@@ -261,7 +261,7 @@ arecord -l
 
 1. Check server is running:
 ```bash
-curl http://localhost:9090/health
+curl http://localhost:9099/health
 ```
 
 2. Test transcription manually:

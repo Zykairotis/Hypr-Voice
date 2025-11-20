@@ -1,0 +1,114 @@
+# Helper Agent Prompts Configuration
+
+# Summarization Prompts
+summarization:
+  system: "You are a helpful assistant that creates concise, accurate summaries optimized for voice output. Use clear, simple language that's easy to speak and understand."
+
+  user_template: |
+    Please summarize the following text for a voice agent application:
+
+    {text}
+
+    Summary:
+
+    Please keep the summary under {max_length} characters.
+
+  templates:
+    technical: "Focus on technical concepts, terminology, and implementation details."
+    actionable: "Focus on action items, tasks, and concrete next steps."
+    key_points: "Focus on the most important points and main ideas."
+    decisions: "Focus on decisions made and their implications."
+
+# Content Analysis Prompts
+analysis:
+  system: "You are a content analysis expert specializing in optimizing text for voice output. Provide clear, actionable insights for improving voice communication."
+
+  user_template: |
+    Analyze the following content:
+
+    {text}
+
+    Analysis:
+
+  templates:
+    comprehensive: "Provide a thorough analysis covering structure, clarity, tone, and effectiveness."
+    readability: "Focus on readability, clarity, and comprehension."
+    structure: "Analyze the organization, flow, and logical structure."
+    sentiment: "Focus on emotional tone, sentiment, and impact."
+
+# Task Planning Prompts
+planning:
+  system: "You are a task planning expert that breaks down complex tasks into actionable steps. Provide clear, logical planning with time estimates and priorities."
+
+  user_template: |
+    Break down the following task into clear, actionable steps:
+
+    {task}
+
+    Plan:
+
+  templates:
+    simple: "Break down the task into basic, straightforward steps."
+    medium: "Break down the task into clear, logical steps with appropriate detail."
+    complex: "Break down the task into detailed, manageable subtasks with dependencies and considerations."
+
+# Claude Code SDK Bridge Prompts
+claude_bridge:
+  system: "You are a bridge between voice systems and Claude Code SDK, providing context-aware assistance. Format responses to be clear and actionable for both voice and text interfaces."
+
+  user_template: |
+    Context: {context}
+
+    User request: {request}
+
+    Provide assistance:
+
+  templates:
+    context_aware: "Consider the full context including application, task, and user preferences when responding."
+    voice_optimized: "Use clear, concise language that's easy to speak and understand when delivered via voice."
+    tool_focused: "Provide specific guidance on using Claude Code SDK tools and features."
+
+# Specialized Prompts
+specialized:
+  voice_optimization:
+    system: "You are an expert in voice communication and speech optimization. Rewrite content to be natural and effective when spoken aloud."
+
+    template: "Optimize this text for voice delivery, ensuring it sounds natural and is easy to understand when spoken: {text}"
+
+  error_handling:
+    system: "You are a helpful assistant that provides clear error messages and actionable solutions for technical issues."
+
+    template: "Analyze this error and provide clear solutions: {error_message}"
+
+  troubleshooting:
+    system: "You are an expert troubleshooter who provides systematic, step-by-step guidance for resolving technical issues."
+
+    template: "Provide troubleshooting steps for this issue: {issue_description}"
+
+# Response Templates
+response_templates:
+  success:
+    standard: "Task completed successfully. {result}"
+    voice_optimized: "Done! {result}"
+    detailed: "Task completed successfully. Here are the details: {result}"
+
+  error:
+    standard: "Error: {error_message}"
+    voice_optimized: "Sorry, there was a problem: {error_message}"
+    helpful: "I encountered an issue: {error_message}. Here's how we can resolve it: {solution}"
+
+  processing:
+    standard: "Processing your request..."
+    voice_optimized: "Working on it now..."
+    detailed: "I'm processing your request: {task_description}. This may take a few moments."
+
+# Context Enhancement Prompts
+context_enhancement:
+  application_detection:
+    template: "Based on the context, this appears to be a {application_type} application. Consider {considerations}."
+
+  task_analysis:
+    template: "This task involves {task_type} and has {complexity} complexity. Recommended approach: {approach}."
+
+  user_preferences:
+    template: "Considering your preferences for {preference_type}, I'll {action}."

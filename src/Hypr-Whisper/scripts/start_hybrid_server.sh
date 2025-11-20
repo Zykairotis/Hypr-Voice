@@ -145,9 +145,9 @@ start_server() {
         print_status "✅ Server started successfully (PID: $server_pid)"
         print_status ""
         print_header "📍 Endpoints:"
-        print_status "🔗 WebSocket: ws://localhost:9090/ws/{session_id}"
-        print_status "🌐 REST API: http://localhost:9090"
-        print_status "📚 API Docs: http://localhost:9090/docs"
+        print_status "🔗 WebSocket: ws://localhost:9099/ws/{session_id}"
+        print_status "🌐 REST API: http://localhost:9099"
+        print_status "📚 API Docs: http://localhost:9099/docs"
         print_status ""
         print_status "📋 Logs: tail -f $LOG_FILE"
     else
@@ -203,17 +203,17 @@ check_status() {
             print_status "✅ Server is running (PID: $pid)"
             
             # Check if server is listening
-            if netstat -ln 2>/dev/null | grep -q ":9090 "; then
-                print_status "🔗 Server listening on port 9090"
+            if netstat -ln 2>/dev/null | grep -q ":9099 "; then
+                print_status "🔗 Server listening on port 9099"
             else
-                print_warning "Server port 9090 not found listening"
+                print_warning "Server port 9099 not found listening"
             fi
             
             # Show active sessions
             if command -v curl &> /dev/null; then
                 print_status ""
                 print_header "Active Sessions:"
-                curl -s http://localhost:9090/sessions 2>/dev/null | python -m json.tool 2>/dev/null || print_warning "Could not fetch sessions"
+                curl -s http://localhost:9099/sessions 2>/dev/null | python -m json.tool 2>/dev/null || print_warning "Could not fetch sessions"
             fi
         else
             print_error "❌ Server is not running (stale PID file)"
@@ -253,7 +253,7 @@ test_server() {
     
     # Test REST API
     print_status "Testing REST API endpoint..."
-    response=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:9090/)
+    response=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:9099/)
     if [ "$response" = "200" ]; then
         print_status "✅ REST API is responding"
     else
@@ -274,7 +274,7 @@ import uuid
 async def test_connection():
     try:
         session_id = str(uuid.uuid4())
-        uri = f'ws://localhost:9090/ws/{session_id}'
+        uri = f'ws://localhost:9099/ws/{session_id}'
         async with websockets.connect(uri) as websocket:
             print('✅ WebSocket connection successful')
             return True

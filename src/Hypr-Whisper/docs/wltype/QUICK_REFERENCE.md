@@ -193,7 +193,7 @@ python wltype_integration.py --realtime --typing-speed 0.03
 python wltype_integration.py --realtime --refresh-interval 5
 
 # Custom server
-python wltype_integration.py --realtime --server http://192.168.1.100:9090
+python wltype_integration.py --realtime --server http://192.168.1.100:9099
 
 # All options
 python wltype_integration.py \
@@ -201,7 +201,7 @@ python wltype_integration.py \
   --device 0 \
   --typing-speed 0.05 \
   --refresh-interval 3 \
-  --server http://localhost:9090
+  --server http://localhost:9099
 ```
 
 ### File Commands
@@ -223,7 +223,7 @@ python wltype_integration.py --file audio.mp3 --language es
 python wltype_integration.py --file audio.mp3 --language auto
 
 # Custom server
-python wltype_integration.py --file audio.mp3 --server http://192.168.1.100:9090
+python wltype_integration.py --file audio.mp3 --server http://192.168.1.100:9099
 
 # All options
 python wltype_integration.py \
@@ -231,7 +231,7 @@ python wltype_integration.py \
   --language auto \
   --type-speed 12 \
   --timeout 300 \
-  --server http://localhost:9090
+  --server http://localhost:9099
 ```
 
 ---

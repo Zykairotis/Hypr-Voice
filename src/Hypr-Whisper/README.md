@@ -47,7 +47,7 @@ cd /home/mewtwo/Zykairotis/Hypr-Voice/src/whisper
 ```
 
 **Server Details:**
-- WebSocket: `ws://localhost:9090`
+- WebSocket: `ws://localhost:9099`
 - Model: `openai/whisper-large-v3-turbo` (INT8 optimized)
 - Device: CUDA
 - Logs: `/tmp/whisper-live-hypr-voice.log`
@@ -89,7 +89,7 @@ The client automatically uses your configured audio device (GA102 HDMI monitor).
 ```yaml
 server:
   host: "localhost"
-  port: 9090
+  port: 9099
   max_clients: 4
 
 backend:

@@ -27,7 +27,7 @@ from vocabulary_manager import get_vocabulary_manager
 # CONFIGURATION
 # ============================================================================
 
-DEFAULT_SERVER_URL = "http://localhost:9090"
+DEFAULT_SERVER_URL = "http://localhost:9099"
 SAMPLE_RATE = 16000  # Standard for voice
 CHUNK_SIZE = 1024
 CHANNELS = 1
@@ -89,26 +89,26 @@ def find_device_by_name(device_name):
     return device_id
 
 # ============================================================================
-# WTYPE INTEGRATION
+# YDOTOOL INTEGRATION
 # ============================================================================
 
 def type_text_words(text, words_per_second=10):
-    """Type text word-by-word using wtype - fast for PTT."""
+    """Type text word-by-word using ydotool - fast for PTT."""
     words = text.split()
     delay = 1.0 / words_per_second
     
     for i, word in enumerate(words):
         # Add space before word (except first word)
         if i > 0:
-            subprocess.run(["wtype", " " + word], capture_output=True)
+            subprocess.run(["ydotool", "type", "-d", "1", "-H", "1", " " + word], capture_output=True)
         else:
-            subprocess.run(["wtype", word], capture_output=True)
+            subprocess.run(["ydotool", "type", "-d", "1", "-H", "1", word], capture_output=True)
         time.sleep(delay)
 
 def type_text_instant(text):
-    """Type entire text instantly using wtype with 1ms delay (fastest possible)."""
+    """Type entire text instantly using ydotool with 1ms delays (fastest possible)."""
     try:
-        subprocess.run(["wtype", "-d", "1", text], capture_output=True, check=True)
+        subprocess.run(["ydotool", "type", "-d", "1", "-H", "1", text], capture_output=True, check=True)
     except subprocess.CalledProcessError as e:
         logger.error(f"Error typing text: {e}")
 

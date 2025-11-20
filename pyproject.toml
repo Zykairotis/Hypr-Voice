@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hypr-voice"
+version = "0.1.0"
+description = "Multi-agent orchestration with voice synthesis and Claude integration."
+readme = "docs/hypr_voice/README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Hypr Voice Team" }]
+license = { text = "Proprietary" }
+dynamic = ["dependencies"]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+packages = ["hypr_voice"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements/hypr_voice.txt"] }
+
+[project.scripts]
+hypr-voice-tts = "hypr_voice.cli.tts:run"
+

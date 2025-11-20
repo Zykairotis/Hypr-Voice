@@ -1,0 +1,98 @@
+# Helper Agent Configuration
+
+# Service Settings
+enabled: true
+
+# SGLang Configuration
+sglang:
+  host: "localhost"
+  port: 30000
+  model: "qwen3-1.7b"
+  timeout: 30
+  health_check_interval: 60
+  max_retries: 3
+  retry_delay: 1.0
+
+# Capability Settings
+capabilities:
+  # Summarization Configuration
+  summarization:
+    enabled: true
+    max_length: 500
+    temperature: 0.3
+    style: "voice_optimized"  # Options: voice_optimized, concise, detailed
+    focus_areas: ["key_points", "technical", "actionable", "decisions"]
+
+  # Content Analysis Configuration
+  analysis:
+    enabled: true
+    optimize_for_voice: true
+    temperature: 0.5
+    analysis_types: ["comprehensive", "readability", "sentiment"]
+    voice_optimization: true
+
+  # Task Planning Configuration
+  planning:
+    enabled: true
+    max_tasks: 10
+    temperature: 0.7
+    default_complexity: "medium"  # Options: simple, medium, complex
+    include_time_estimates: true
+    include_priorities: true
+
+  # Claude Code SDK Bridge Configuration
+  claude_sdk_bridge:
+    enabled: true
+    context_aware: true
+    timeout: 30
+    temperature: 0.5
+    voice_optimization: true
+    max_context_history: 10
+    context_retention_hours: 24
+
+# Performance Settings
+performance:
+  max_concurrent_requests: 5
+  request_timeout: 60
+  cache_enabled: true
+  cache_ttl: 3600  # 1 hour
+  rate_limiting:
+    enabled: false
+    requests_per_minute: 30
+
+# Logging Settings
+logging:
+  level: "INFO"  # Options: DEBUG, INFO, WARNING, ERROR
+  file: "/tmp/helper-agent.log"
+  max_file_size: "10MB"
+  backup_count: 5
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# Integration Settings
+integration:
+  # Voice System Integration
+  voice_system:
+    enabled: true
+    auto_optimize: true
+    response_format: "voice_friendly"
+
+  # Claude Code SDK Integration
+  claude_code_sdk:
+    enabled: true
+    tool_bridging: true
+    context_sharing: true
+    automatic_formatting: true
+
+# Monitoring Settings
+monitoring:
+  metrics_enabled: true
+  health_check_interval: 60
+  performance_tracking: true
+  error_reporting: true
+
+# Development Settings
+development:
+  debug_mode: false
+  mock_sglang: false
+  test_mode: false
+  verbose_logging: false

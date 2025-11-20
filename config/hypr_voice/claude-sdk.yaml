@@ -1,0 +1,134 @@
+# Claude Code SDK Configuration
+# This configuration file sets up the Claude Code SDK integration
+# with Hyprland monitoring and application-aware context
+
+sdk:
+  # Enable Claude Code SDK instead of API
+  use_code_sdk: true
+  
+  # Model configuration
+  model: "claude-3-5-sonnet-20241022"
+  max_tokens: 8096
+  temperature: 1.0
+  
+  # Session management
+  session_timeout: 3600  # seconds
+  persist_sessions: true
+  
+monitoring:
+  # Enable Hyprland window monitoring
+  enabled: true
+  
+  # Update interval in seconds (100-200ms as requested)
+  interval: 0.15  # 150ms
+  
+  # Include application context in prompts
+  include_context: true
+  
+  # Monitor all workspaces
+  monitor_all_workspaces: true
+  
+  # Application detection methods
+  detection_methods:
+    - hyprland  # Primary method
+    - x11       # Fallback for non-Hyprland systems
+  
+context:
+  # Context message format
+  include_window_class: true
+  include_window_title: true
+  include_vocabulary: true
+  include_workspace: true
+  
+  # Maximum vocabulary terms to include
+  max_vocabulary_terms: 20
+  
+  # Context update behavior
+  notify_on_change: true
+  auto_adjust_responses: true
+
+applications:
+  # Application-specific configurations
+  profiles:
+    development:
+      window_classes: ['Code', 'code', 'vim', 'nvim', 'emacs', 'sublime_text']
+      extra_context: "User is coding. Provide technical assistance."
+      
+    browsing:
+      window_classes: ['firefox', 'chrome', 'chromium', 'brave']
+      extra_context: "User is browsing the web. Offer relevant web assistance."
+      
+    terminal:
+      window_classes: ['alacritty', 'kitty', 'gnome-terminal', 'konsole']
+      extra_context: "User is in terminal. Provide command-line assistance."
+      
+    communication:
+      window_classes: ['discord', 'slack', 'teams', 'zoom']
+      extra_context: "User is in communication app. Be concise."
+      
+    documentation:
+      window_classes: ['obsidian', 'notion', 'roam', 'logseq']
+      extra_context: "User is working with notes. Help with knowledge management."
+
+tools:
+  # Available tools for the agent
+  enabled:
+    - get_application_context
+    - switch_to_window
+    - list_open_windows
+    - file_operations
+    - bash_execution
+    
+  # Tool permissions
+  auto_execute:
+    - get_application_context
+    - list_open_windows
+    
+  require_confirmation:
+    - switch_to_window
+    - file_operations
+    - bash_execution
+
+vocabulary:
+  # Integration with vocabulary manager
+  use_vocabulary_manager: true
+  
+  # Path to vocabulary configurations
+  config_path: "../../Hypr-Whisper/config"
+  
+  # Vocabulary loading strategy
+  preload_all: false  # Load on-demand instead
+  cache_vocabularies: true
+  
+  # Fuzzy matching for context
+  fuzzy_match_threshold: 0.85
+  
+logging:
+  # Logging configuration
+  level: INFO
+  
+  # Log context changes
+  log_context_changes: true
+  
+  # Log vocabulary updates
+  log_vocabulary_updates: false
+  
+  # Performance logging
+  log_performance_metrics: false
+
+# Feature flags
+features:
+  # Enable continuous conversation mode
+  continuous_conversation: true
+  
+  # Enable thinking blocks (for debugging)
+  show_thinking: false
+  
+  # Enable voice synthesis integration
+  voice_synthesis: false
+  
+  # Enable MCP server support
+  mcp_servers: true
+  
+  # Enable subagent creation
+  subagents: true

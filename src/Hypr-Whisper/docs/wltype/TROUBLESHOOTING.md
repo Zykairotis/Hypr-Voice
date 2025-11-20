@@ -123,11 +123,11 @@ python wltype_integration.py --realtime
 
 **Verify server is running:**
 ```bash
-# Check if server is listening on port 9090
-curl http://localhost:9090/health
+# Check if server is listening on port 9099
+curl http://localhost:9099/health
 
 # Or check with netstat
-netstat -tulpn | grep 9090
+netstat -tulpn | grep 9099
 ```
 
 ---
@@ -365,7 +365,7 @@ If you're still having issues:
 
 1. **Check server status:**
    ```bash
-   curl http://localhost:9090/health
+   curl http://localhost:9099/health
    ```
 
 2. **Review logs:**
@@ -379,7 +379,7 @@ If you're still having issues:
    wltype "test"
    
    # Test server
-   curl http://localhost:9090
+   curl http://localhost:9099
    
    # Test audio
    python wltype_integration.py --list-devices

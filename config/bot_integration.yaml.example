@@ -1,0 +1,41 @@
+# Bot Integration Configuration Example
+# Copy this file to bot_integration.yaml and update with your settings
+
+# Telegram Bot Configuration
+telegram:
+  bot_token: "${TELEGRAM_BOT_TOKEN}"  # Set in environment variable
+  enabled: true
+  max_file_size_mb: 20
+  rate_limit_per_minute: 30
+  authorized_users: []  # List of authorized user IDs
+  authorized_chats: []  # List of authorized chat IDs
+  webhook_url: null     # Optional: Set for webhook mode
+  webhook_port: 8443
+  use_webhook: false    # Set to true to use webhook instead of polling
+
+# Discord Bot Configuration
+discord:
+  bot_token: "${DISCORD_BOT_TOKEN}"  # Set in environment variable
+  enabled: true
+  command_prefix: "!"
+  max_file_size_mb: 8
+  rate_limit_per_minute: 30
+  owner_ids: []        # List of owner user IDs
+  allowed_guilds: []   # List of allowed server IDs (empty = all)
+  require_guild_membership: true
+  default_permission_level: "user"  # user, moderator, admin, owner
+
+# General Bot Configuration
+helper_agent_enabled: true
+log_level: "INFO"        # DEBUG, INFO, WARNING, ERROR, CRITICAL
+temp_directory: "/tmp/bot_files"
+cleanup_interval_hours: 24
+max_concurrent_users: 100
+enable_voice_features: true
+enable_file_processing: true
+enable_summarization: true
+
+# Security Settings
+require_guild_membership: true
+session_timeout: 3600    # 1 hour in seconds
+max_audit_entries: 1000

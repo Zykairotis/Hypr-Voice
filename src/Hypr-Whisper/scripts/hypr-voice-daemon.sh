@@ -45,9 +45,9 @@ start_daemon() {
     echo -e "${BLUE}🎤 Starting Hypr-Voice PTT Daemon${NC}"
     
     # Check dependencies
-    if ! command -v wtype &> /dev/null; then
-        echo -e "${RED}[ERROR]${NC} wtype not found!"
-        echo -e "${YELLOW}[INFO]${NC} Install with: sudo apt-get install wtype"
+    if ! command -v ydotool &> /dev/null; then
+        echo -e "${RED}[ERROR]${NC} ydotool not found!"
+        echo -e "${YELLOW}[INFO]${NC} Install with: sudo pacman -S ydotool (Arch) or build from source"
         exit 1
     fi
     
@@ -58,8 +58,8 @@ start_daemon() {
     fi
     
     # Check if server is running
-    if ! curl -s http://localhost:9090/health > /dev/null 2>&1; then
-        echo -e "${YELLOW}[WARN]${NC} Whisper server not responding at http://localhost:9090"
+    if ! curl -s http://localhost:9099/health > /dev/null 2>&1; then
+        echo -e "${YELLOW}[WARN]${NC} Whisper server not responding at http://localhost:9099"
         echo -e "${YELLOW}[INFO]${NC} Start server with: ./scripts/start_hybrid_server.sh"
         echo ""
         read -p "Start daemon anyway? (y/N) " -n 1 -r

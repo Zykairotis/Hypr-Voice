@@ -53,7 +53,7 @@ python wltype_integration.py --realtime
 ✓ Auto-detected device: GA102 High Definition Audio Controller... (ID: 2)
 
 ⏰ Realtime Mode Configuration:
-  Server: http://localhost:9090
+  Server: http://localhost:9099
   Device: 2 (from audio-profile.yaml)
   Typing speed: 0.05s per char
   Refresh interval: 3s

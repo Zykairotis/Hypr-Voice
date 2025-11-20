@@ -104,7 +104,7 @@ start_server() {
     sleep 2
     if kill -0 "$server_pid" 2>/dev/null; then
         print_status "✅ Server started successfully (PID: $server_pid)"
-        print_status "🔗 WebSocket server: ws://localhost:9090"
+        print_status "🔗 WebSocket server: ws://localhost:9099"
         print_status "📋 Logs: tail -f $LOG_FILE"
     else
         print_error "❌ Failed to start server"
@@ -159,10 +159,10 @@ check_status() {
             print_status "✅ Server is running (PID: $pid)"
 
             # Check if WebSocket port is listening
-            if netstat -ln 2>/dev/null | grep -q ":9090 "; then
-                print_status "🔗 WebSocket server listening on port 9090"
+            if netstat -ln 2>/dev/null | grep -q ":9099 "; then
+                print_status "🔗 WebSocket server listening on port 9099"
             else
-                print_warning "WebSocket port 9090 not found listening"
+                print_warning "WebSocket port 9099 not found listening"
             fi
         else
             print_error "❌ Server is not running (stale PID file)"
@@ -213,7 +213,7 @@ import json
 
 async def test_connection():
     try:
-        uri = 'ws://localhost:9090'
+        uri = 'ws://localhost:9099'
         async with websockets.connect(uri) as websocket:
             print('✅ WebSocket connection successful')
             return True

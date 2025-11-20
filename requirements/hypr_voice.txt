@@ -1,0 +1,162 @@
+# =============================================================================
+# Multi-Agent Orchestration System Dependencies
+# =============================================================================
+
+# Core Web Framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0.post1
+websockets==12.0
+pydantic==2.5.0
+pydantic-settings==2.1.0
+python-multipart==0.0.6
+starlette==0.27.0
+
+# Async Support
+aiohttp==3.9.1
+aiofiles==23.2.1
+asyncio-mqtt==0.16.2
+
+# Claude SDK for code assistant integration
+# NOTE: Claude Agent SDK is not yet available on PyPI
+# Install manually when available or use the mock implementation
+
+# Voice Synthesis Services
+elevenlabs==1.9.0  # ElevenLabs TTS
+deepgram-sdk==3.8.0  # Deepgram STT/TTS
+# Kokoro dependencies are already included in main requirements
+
+# Screen Analysis
+google-generativeai==0.8.3  # Gemini API
+pillow==10.4.0  # Image processing
+mss==9.0.2  # Screenshot capture
+
+# LiteLLM for Multi-Model Support
+litellm==1.17.0
+openai>=1.6.0  # For OpenAI models
+anthropic>=0.8.0  # For Claude models
+google-generativeai>=0.3.0  # For Google models
+cohere>=4.37  # For Cohere models
+
+# MCP (Model Context Protocol) Support
+jsonrpc-asyncio==1.0.0
+json-rpc==1.15.0
+
+# Configuration & Environment
+python-dotenv==1.0.0
+PyYAML==6.0.1
+toml==0.10.2
+configparser==6.0.0
+
+# Rich Terminal UI
+rich==13.7.0
+textual==0.41.0
+blessed==1.20.0
+colorama==0.4.6
+questionary==2.0.1
+
+# Logging & Monitoring
+loguru==0.7.2
+prometheus-client==0.19.0
+structlog==23.2.0
+
+# Data Processing
+pandas==2.1.4
+numpy==1.26.2
+jinja2==3.1.2
+
+# JSON & Validation
+jsonschema==4.20.0
+json5==0.9.14
+ujson==5.9.0
+
+# Date/Time
+python-dateutil==2.8.2
+pytz==2023.3.post1
+croniter==2.0.1
+
+# Process & System Management
+psutil==5.9.6
+supervisor==4.2.5
+schedule==1.2.0
+
+# Database Support (Optional)
+# sqlalchemy==2.0.23
+# alembic==1.13.0
+# asyncpg==0.29.0  # PostgreSQL
+# aiosqlite==0.19.0  # SQLite
+
+# Voice Synthesis (Kokoro TTS)
+# kokoro-onnx>=1.0.0  # Uncomment when available
+scipy==1.11.4
+soundfile==0.12.1
+pyaudio==0.2.14
+wave==0.0.2
+
+# Computer Use / Automation (Optional)
+# pyautogui==0.9.54
+# pillow==10.1.0
+# opencv-python==4.8.1.78
+# mss==9.0.1  # Screenshot capture
+# pynput==1.7.6  # Keyboard/mouse control
+
+# Web Scraping (Optional)
+# beautifulsoup4==4.12.2
+# selenium==4.15.2
+# playwright==1.40.0
+
+# Redis Support (Optional)
+# redis==5.0.1
+# aioredis==2.0.1
+
+# Security
+cryptography==41.0.7
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.6
+
+# Testing & Development
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+black==23.11.0
+flake8==6.1.0
+isort==5.12.0
+mypy==1.7.1
+coverage==7.3.2
+httpx==0.25.2  # For testing HTTP clients
+
+# Documentation
+mkdocs==1.5.3
+mkdocs-material==9.4.14
+mkdocstrings[python]==0.24.0
+
+# Utilities
+click==8.1.7
+typer==0.9.0
+tenacity==8.2.3
+tqdm==4.66.1
+humanize==4.9.0
+python-slugify==8.0.1
+
+# Development Tools (Optional)
+# ipython==8.18.1
+# jupyter==1.0.0
+# notebook==7.0.6
+
+# =============================================================================
+# Installation Notes:
+# =============================================================================
+# 1. Use the Hypr-Voice virtual environment:
+#    source /home/mewtwo/Zykairotis/Hypr-Voice/.venv/bin/activate
+#
+# 2. Install all dependencies:
+#    pip install -r requirements.txt
+#
+# 3. For optional dependencies, uncomment as needed
+#
+# 4. For MCP servers, also install:
+#    npm install -g @modelcontextprotocol/server-filesystem
+#    npm install -g @modelcontextprotocol/server-github
+#    npm install -g @modelcontextprotocol/server-git
+# =============================================================================

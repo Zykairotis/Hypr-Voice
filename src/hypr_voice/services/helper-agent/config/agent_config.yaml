@@ -1,0 +1,361 @@
+# LangGraph Agent Configuration
+# Defines agent behavior, workflow, and tool usage settings
+
+# Global Agent Settings
+agent:
+  enabled: true
+  mode: "auto"  # auto, agentic, direct
+  name: "HelperAgent"
+  description: "Multi-provider AI assistant with specialized capabilities"
+  version: "2.0.0"
+
+# Agent Modes
+modes:
+  # Auto mode - intelligent decision making
+  auto:
+    description: "Automatically decide between agentic and direct mode"
+    complexity_threshold: 3  # Tasks above this use agentic mode
+    tool_required_threshold: 2  # If 2+ tools needed, use agentic
+    
+  # Agentic mode - multi-step reasoning with tools
+  agentic:
+    description: "Multi-step reasoning with tool usage"
+    enabled: true
+    max_iterations: 5
+    allow_tool_chaining: true
+    require_reasoning: true
+    
+  # Direct mode - single LLM call
+  direct:
+    description: "Single LLM call without tools"
+    enabled: true
+    use_provider_defaults: true
+
+# LangGraph Workflow Configuration
+workflow:
+  # ReAct Pattern Implementation
+  react_pattern:
+    enabled: true
+    steps:
+      - name: "input_processing"
+        description: "Process and understand user input"
+        timeout: 5
+        
+      - name: "reasoning"
+        description: "Reason about the task and plan approach"
+        timeout: 10
+        
+      - name: "tool_selection"
+        description: "Select appropriate tools for the task"
+        timeout: 5
+        
+      - name: "action"
+        description: "Execute selected tools"
+        timeout: 30
+        allow_parallel: true
+        
+      - name: "observation"
+        description: "Observe and process tool results"
+        timeout: 5
+        
+      - name: "synthesis"
+        description: "Synthesize results into final response"
+        timeout: 10
+        
+      - name: "output_formatting"
+        description: "Format output for voice/text"
+        timeout: 5
+  
+  # Conditional Edges
+  conditional_routing:
+    enabled: true
+    rules:
+      - condition: "needs_tools"
+        route_to: "tool_selection"
+      - condition: "has_result"
+        route_to: "synthesis"
+      - condition: "needs_clarification"
+        route_to: "input_processing"
+      - condition: "max_iterations_reached"
+        route_to: "output_formatting"
+  
+  # State Management
+  state:
+    persist: true
+    max_history: 10
+    checkpoint_interval: 1
+    restore_on_failure: true
+
+# Tool Configuration
+tools:
+  # Available tools for agent
+  available:
+    - summarize_text
+    - analyze_content
+    - plan_task
+    - calculator
+    - extract_information
+    - claude_sdk_bridge
+  
+  # Tool selection strategy
+  selection:
+    strategy: "smart"  # smart, explicit, all
+    max_tools_per_iteration: 3
+    prefer_specialized: true  # Prefer specialized tools over general
+    
+  # Tool execution
+  execution:
+    parallel_execution: true
+    max_parallel: 3
+    timeout: 30
+    retry_on_failure: true
+    max_retries: 2
+    fallback_enabled: true
+  
+  # Tool chaining
+  chaining:
+    enabled: true
+    max_chain_length: 5
+    auto_chain: true  # Automatically chain related tools
+    
+# Memory Configuration
+memory:
+  # Short-term memory (conversation buffer)
+  short_term:
+    enabled: true
+    type: "buffer"  # buffer, summary, token
+    max_messages: 10
+    max_tokens: 4000
+    include_system: true
+    
+  # Long-term memory (persistent storage)
+  long_term:
+    enabled: false
+    type: "vector"  # vector, key_value
+    persistence_path: "/tmp/helper-agent-memory"
+    max_entries: 1000
+    
+  # Working memory (task-specific)
+  working:
+    enabled: true
+    clear_on_task_completion: false
+    max_size: 100
+
+# Reasoning Configuration
+reasoning:
+  # Thought process
+  chain_of_thought:
+    enabled: true
+    verbose: false  # Show reasoning to user
+    max_thoughts: 5
+    
+  # Self-reflection
+  reflection:
+    enabled: true
+    frequency: "per_iteration"  # per_iteration, final, never
+    learn_from_errors: true
+    
+  # Planning
+  planning:
+    enabled: true
+    look_ahead_steps: 3
+    revise_plan: true
+    
+# Error Handling & Fallback
+error_handling:
+  # Retry configuration
+  retry:
+    enabled: true
+    max_retries: 3
+    backoff_factor: 2.0
+    retry_on:
+      - "timeout"
+      - "rate_limit"
+      - "server_error"
+  
+  # Fallback strategies
+  fallback:
+    enabled: true
+    strategies:
+      - name: "simpler_approach"
+        description: "Try with fewer tools or simpler reasoning"
+      - name: "different_provider"
+        description: "Switch to backup provider"
+      - name: "direct_mode"
+        description: "Fall back to direct mode without tools"
+    
+  # Graceful degradation
+  degradation:
+    enabled: true
+    partial_results: true  # Return partial results if possible
+    explain_limitations: true
+
+# Output Configuration
+output:
+  # Format settings
+  format:
+    default: "structured"  # structured, natural, minimal
+    voice_optimized: true
+    include_metadata: false
+    include_reasoning: false
+    
+  # Voice optimization
+  voice:
+    enabled: true
+    max_response_length: 1000
+    use_simple_language: true
+    expand_abbreviations: true
+    avoid_jargon: true
+    
+  # Streaming
+  streaming:
+    enabled: true
+    chunk_size: 512
+    include_thinking: false  # Stream thinking process
+
+# Performance Configuration
+performance:
+  # Caching
+  cache:
+    enabled: true
+    cache_provider_responses: true
+    cache_tool_results: true
+    cache_ttl: 3600
+    
+  # Batching
+  batching:
+    enabled: false
+    max_batch_size: 10
+    batch_timeout: 5
+    
+  # Timeouts
+  timeouts:
+    total_execution: 60
+    per_step: 30
+    provider_call: 30
+    tool_execution: 30
+    
+  # Concurrency
+  concurrency:
+    max_concurrent_tasks: 5
+    max_concurrent_tools: 3
+    queue_size: 100
+
+# Task-Specific Configurations
+task_configs:
+  # Summarization tasks
+  summarization:
+    mode: "direct"  # Usually don't need agentic for summarization
+    preferred_tools: ["summarize_text"]
+    provider_preference: ["claude", "openai"]
+    
+  # Analysis tasks
+  analysis:
+    mode: "agentic"
+    preferred_tools: ["analyze_content", "extract_information"]
+    provider_preference: ["claude", "openai", "grok"]
+    max_iterations: 3
+    
+  # Planning tasks
+  planning:
+    mode: "agentic"
+    preferred_tools: ["plan_task", "analyze_content"]
+    provider_preference: ["openai", "claude"]
+    max_iterations: 4
+    
+  # General chat
+  general_chat:
+    mode: "direct"
+    preferred_tools: []
+    provider_preference: ["groq", "openai", "claude"]
+    
+  # Complex queries
+  complex_query:
+    mode: "agentic"
+    preferred_tools: ["all"]
+    provider_preference: ["openai", "claude"]
+    max_iterations: 5
+    allow_tool_chaining: true
+
+# Monitoring & Metrics
+monitoring:
+  enabled: true
+  track_metrics:
+    - execution_time
+    - tool_usage
+    - provider_usage
+    - error_rate
+    - success_rate
+    - cost
+    
+  export:
+    enabled: true
+    format: "prometheus"
+    interval: 60
+    
+  alerting:
+    enabled: false
+    thresholds:
+      error_rate: 0.1
+      avg_response_time: 10.0
+
+# Development & Debugging
+development:
+  debug_mode: false
+  verbose_logging: false
+  trace_execution: false
+  save_execution_graph: false
+  
+  # Testing
+  testing:
+    mock_providers: false
+    mock_tools: false
+    deterministic: false  # Use fixed seeds for testing
+    
+# Integration Settings
+integration:
+  # Voice system integration
+  voice_system:
+    enabled: true
+    optimize_responses: true
+    max_tts_length: 1000
+    
+  # Claude SDK integration
+  claude_sdk:
+    enabled: true
+    bridge_enabled: true
+    context_sharing: true
+    
+  # External APIs
+  external_apis:
+    enabled: true
+    timeout: 30
+    max_retries: 3
+
+# Safety & Security
+safety:
+  # Content filtering
+  content_filter:
+    enabled: true
+    filter_harmful: true
+    filter_pii: false
+    
+  # Input validation
+  input_validation:
+    enabled: true
+    max_input_length: 50000
+    sanitize_input: true
+    
+  # Rate limiting
+  rate_limiting:
+    enabled: true
+    requests_per_minute: 60
+    tokens_per_minute: 100000
+    
+  # Sandboxing
+  sandbox:
+    enabled: true
+    restrict_file_access: true
+    restrict_network: false
+    restrict_code_execution: true
+

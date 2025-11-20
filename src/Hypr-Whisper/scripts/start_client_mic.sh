@@ -68,11 +68,11 @@ fi
 
 cd "$WHISPER_ROOT"
 
-echo -e "${GREEN}[INFO]${NC} Server: http://localhost:9090"
+echo -e "${GREEN}[INFO]${NC} Server: http://localhost:9099"
 echo -e "${GREEN}[INFO]${NC} Using Hybrid Client (WebSocket mode)"
 echo ""
 echo -e "${BLUE}Press Ctrl+C to stop${NC}"
 echo ""
 
 # Use the hybrid client with proper WebSocket support
-"$VENV_PATH/bin/python" hybrid_client.py --stream --server http://localhost:9090
+"$VENV_PATH/bin/python" hybrid_client.py --stream --server http://localhost:9099

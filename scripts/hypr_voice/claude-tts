@@ -1,0 +1,24 @@
+#!/bin/bash
+# Claude TTS CLI Launcher
+# Easy launcher for the Claude TTS CLI
+
+# Get script and project directories
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+# Add npm global bin to PATH for Claude Code
+export PATH="$HOME/.npm-global/bin:$PATH"
+
+# Activate virtual environment
+if [ -f "$PROJECT_ROOT/.venv/bin/activate" ]; then
+  source "$PROJECT_ROOT/.venv/bin/activate"
+else
+  echo "Virtual environment not found at $PROJECT_ROOT/.venv"
+  exit 1
+fi
+
+# Ensure src directory is on PYTHONPATH
+export PYTHONPATH="$PROJECT_ROOT/src:${PYTHONPATH}"
+
+# Run the CLI module
+python -m hypr_voice.cli.tts "$@"

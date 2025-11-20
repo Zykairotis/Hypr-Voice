@@ -1,0 +1,261 @@
+# Application Categories Configuration
+# Defines user-defined categories for application categorization
+
+categories:
+  development:
+    description: "Coding, terminals, IDEs, version control, development tools"
+    patterns:
+      - cursor
+      - code
+      - nvim
+      - vim
+      - emacs
+      - terminal
+      - alacritty
+      - kitty
+      - wezterm
+      - konsole
+      - gnome-terminal
+      - tilix
+      - terminator
+      - st
+      - xterm
+      - rxvt
+      - urxvt
+      - vscode
+      - sublime
+      - atom
+      - pycharm
+      - intellij
+      - android-studio
+      - webstorm
+      - phpstorm
+      - goland
+      - rubymine
+      - clion
+      - datagrip
+      - rider
+      - git
+      - github
+      - gitlab
+      - gitkraken
+      - sublime-merge
+    freedesktop_map:
+      - Development
+      - IDE
+      - TerminalEmulator
+      - Debugger
+      - RevisionControl
+  
+  communication:
+    description: "Chat applications, email, video calls, messaging"
+    patterns:
+      - discord
+      - slack
+      - teams
+      - zoom
+      - skype
+      - telegram
+      - signal
+      - whatsapp
+      - thunderbird
+      - evolution
+      - geary
+      - kmail
+      - claws-mail
+      - mutt
+      - element
+      - matrix
+      - irc
+      - hexchat
+      - konversation
+      - pidgin
+      - kopete
+    freedesktop_map:
+      - Network
+      - InstantMessaging
+      - VideoConference
+      - Email
+      - Chat
+      - IRCClient
+  
+  productivity:
+    description: "Browsers, documents, note-taking, office applications"
+    patterns:
+      - firefox
+      - chromium
+      - chrome
+      - brave
+      - zen
+      - vivaldi
+      - opera
+      - edge
+      - safari
+      - qutebrowser
+      - epiphany
+      - falkon
+      - obsidian
+      - notion
+      - joplin
+      - standard-notes
+      - libreoffice
+      - onlyoffice
+      - calligra
+      - abiword
+      - gnumeric
+      - okular
+      - evince
+      - zathura
+      - mupdf
+      - foliate
+    freedesktop_map:
+      - Office
+      - WebBrowser
+      - Documentation
+      - TextEditor
+      - WordProcessor
+      - Spreadsheet
+      - Presentation
+      - Publishing
+      - Viewer
+  
+  media:
+    description: "Audio players, video players, image editors, graphics tools"
+    patterns:
+      - vlc
+      - mpv
+      - mplayer
+      - celluloid
+      - clementine
+      - rhythmbox
+      - strawberry
+      - audacious
+      - deadbeef
+      - spotify
+      - gimp
+      - inkscape
+      - blender
+      - krita
+      - darktable
+      - rawtherapee
+      - kdenlive
+      - shotcut
+      - openshot
+      - obs
+      - audacity
+      - ardour
+      - lmms
+    freedesktop_map:
+      - AudioVideo
+      - Graphics
+      - Video
+      - Audio
+      - Player
+      - Recorder
+      - DiscBurning
+      - 2DGraphics
+      - 3DGraphics
+      - RasterGraphics
+      - VectorGraphics
+      - Photography
+  
+  gaming:
+    description: "Games, game launchers, emulators"
+    patterns:
+      - steam
+      - lutris
+      - heroic
+      - minecraft
+      - retroarch
+      - dolphin
+      - pcsx2
+      - rpcs3
+      - yuzu
+      - cemu
+      - playonlinux
+      - wine
+      - proton
+    freedesktop_map:
+      - Game
+      - ActionGame
+      - AdventureGame
+      - ArcadeGame
+      - BoardGame
+      - CardGame
+      - Emulator
+  
+  system:
+    description: "System utilities, file managers, system monitors"
+    patterns:
+      - dolphin
+      - nautilus
+      - nemo
+      - thunar
+      - pcmanfm
+      - ranger
+      - htop
+      - btop
+      - gotop
+      - gnome-system-monitor
+      - ksysguard
+      - systemsettings
+      - gnome-control-center
+      - pavucontrol
+      - gparted
+      - timeshift
+      - baobab
+      - filelight
+    freedesktop_map:
+      - System
+      - Settings
+      - FileManager
+      - Monitor
+      - Utility
+      - FileTools
+      - Archiving
+      - Compression
+  
+  other:
+    description: "Uncategorized applications"
+    patterns: []
+    freedesktop_map: []
+
+# Dynamic detection settings
+detection:
+  use_desktop_files: true
+  fallback_to_heuristics: true
+  cache_results: true
+  cache_ttl: 3600  # seconds
+  
+  # Heuristic patterns for categorization when desktop file not found
+  heuristics:
+    terminal_keywords:
+      - term
+      - console
+      - shell
+      - tty
+      - bash
+      - zsh
+      - fish
+    
+    browser_keywords:
+      - browser
+      - web
+      - firefox
+      - chrome
+      - chromium
+    
+    editor_keywords:
+      - edit
+      - code
+      - vim
+      - emacs
+      - nano
+    
+    media_keywords:
+      - player
+      - video
+      - audio
+      - music
+      - sound
+

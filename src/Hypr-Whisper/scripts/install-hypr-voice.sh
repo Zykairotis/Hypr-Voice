@@ -32,8 +32,8 @@ echo -e "${GREEN}✓${NC} Scripts are executable"
 echo -e "\n${BLUE}[2/5]${NC} Checking dependencies..."
 MISSING_DEPS=""
 
-if ! command -v wtype &> /dev/null; then
-    MISSING_DEPS="$MISSING_DEPS wtype"
+if ! command -v ydotool &> /dev/null; then
+    MISSING_DEPS="$MISSING_DEPS ydotool"
 fi
 
 if ! command -v nc &> /dev/null; then

@@ -31,10 +31,12 @@ class ApplicationDetector:
         """Detect the available window system and detection method."""
         # Try to detect the window system
         try:
-            # Check for Hyprland
-            result = subprocess.run(['hyprctl', '--version'],
+            # Check for Hyprland using 'version' command
+            # Note: hyprctl --version returns exit code 1, so we check for 'version' command instead
+            result = subprocess.run(['hyprctl', 'version'],
                                   capture_output=True, text=True, timeout=5)
-            if result.returncode == 0:
+            # Check if output contains "Hyprland" (works even if returncode != 0)
+            if 'Hyprland' in result.stdout or 'Hyprland' in result.stderr:
                 logger.info("Detected Hyprland window system")
                 return "hyprland"
         except (subprocess.TimeoutExpired, FileNotFoundError):
@@ -54,19 +56,15 @@ class ApplicationDetector:
         return "manual"
 
     def get_active_window_hyprland(self) -> Optional[Dict]:
-        """Get active window information using Hyprland."""
+        """Get active window information using Hyprland with full metadata."""
         try:
-            # Get active window info as JSON
+            # Get active window info as JSON with all details
             result = subprocess.run(['hyprctl', 'activewindow', '-j'],
                                   capture_output=True, text=True, timeout=5)
             if result.returncode == 0:
                 data = json.loads(result.stdout)
-                return {
-                    'class': data.get('class', ''),
-                    'title': data.get('title', ''),
-                    'initialClass': data.get('initialClass', ''),
-                    'initialTitle': data.get('initialTitle', '')
-                }
+                # Return full Hyprland data for comprehensive context
+                return data
         except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError) as e:
             logger.error(f"Error getting Hyprland active window: {e}")
         return None
@@ -128,7 +126,7 @@ class ApplicationDetector:
 
         return False
 
-    async def monitor_applications(self, interval: float = 0.5):
+    async def monitor_applications(self, interval: float = 0.2):
         """Monitor applications and update vocabulary accordingly."""
         logger.info(f"Starting application monitoring (interval: {interval}s)")
 
@@ -138,10 +136,11 @@ class ApplicationDetector:
                     window_info = self.get_active_window()
                     if window_info:
                         app_class = window_info.get('class', '') or window_info.get('initialClass', '')
-                        logger.info(f"Application changed to: {app_class}")
+                        app_title = window_info.get('title', '') or window_info.get('initialTitle', '')
+                        logger.info(f"Application changed to: {app_class} - {app_title}")
 
                         # Update vocabulary based on new application
-                        self.vocabulary_manager.update_vocabulary(app_class)
+                        self.vocabulary_manager.update_vocabulary(app_class, app_title)
 
                 await asyncio.sleep(interval)
 
@@ -197,15 +196,78 @@ async def main():
         print("Testing application detection...")
         window_info = detector.get_active_window()
         if window_info:
-            print(f"Current window: {window_info}")
+            print(f"\n{'='*60}")
+            print(f"WINDOW INFO:")
+            print(f"{'='*60}")
+            print(f"  Class: {window_info.get('class', '')}")
+            print(f"  Title: {window_info.get('title', '')}")
+            print(f"  Initial Class: {window_info.get('initialClass', '')}")
+            
             app_class = window_info.get('class', '') or window_info.get('initialClass', '')
-            print(f"Detected application: {app_class}")
-
+            app_title = window_info.get('title', '') or window_info.get('initialTitle', '')
+            
             # Test vocabulary matching
             vm = detector.vocabulary_manager
-            vm.update_vocabulary(app_class)
-            print(f"Selected vocabulary: {vm.current_vocabulary}")
-            print(f"Active keywords: {len(vm.active_keywords)}")
+            vm.update_vocabulary(app_class, app_title)
+            
+            print(f"\n{'='*60}")
+            print(f"VOCABULARY:")
+            print(f"{'='*60}")
+            print(f"  Selected vocabulary: {vm.current_vocabulary}")
+            print(f"  Total active keywords: {len(vm.active_keywords)}")
+            
+            # Show context extraction details
+            if vm.context_manager:
+                print(f"\n{'='*60}")
+                print(f"CONTEXT EXTRACTION:")
+                print(f"{'='*60}")
+                
+                # Get comprehensive context
+                context = vm.context_manager.get_comprehensive_context(window_info)
+                
+                # Shell history
+                print(f"\n  📜 Shell History (last 10 of {len(context['context']['shell']['recent_commands'])}):")
+                for i, cmd in enumerate(context['context']['shell']['recent_commands'][-10:], 1):
+                    print(f"    {i}. {cmd[:80]}")
+                
+                # Clipboard
+                print(f"\n  📋 Clipboard History ({len(context['context']['clipboard']['recent_entries'])} entries):")
+                for i, entry in enumerate(context['context']['clipboard']['recent_entries'], 1):
+                    preview = entry[:60].replace('\n', ' ')
+                    print(f"    {i}. {preview}...")
+                
+                # Window context
+                if 'window' in context['context']:
+                    print(f"\n  🪟 Window Context:")
+                    print(f"    Application: {context['context']['window']['application']}")
+                    print(f"    Title: {context['context']['window']['title']}")
+                
+                # Extracted vocabulary
+                print(f"\n  🔤 Extracted Vocabulary ({len(context['vocabulary'])} words):")
+                # Display as clean list
+                vocab_list = sorted(context['vocabulary'])
+                print(f"    {vocab_list}")
+                
+                # Test initial_prompt generation
+                print(f"\n  🎯 Initial Prompt Test:")
+                initial_prompt = vm.get_initial_prompt(max_tokens=200)
+                print(f"    Length: {len(initial_prompt)} chars (~{len(initial_prompt)//4} tokens)")
+                print(f"    Preview: {initial_prompt[:150]}...")
+                if len(initial_prompt) > 150:
+                    print(f"    ...{initial_prompt[-50:]}")
+                
+                # Verify format
+                checks = [
+                    ("✓" if "," in initial_prompt else "✗", "Comma-separated format"),
+                    ("✓" if len(initial_prompt) <= 800 else "✗", f"Under 800 chars limit ({len(initial_prompt)}/800)"),
+                    ("✓" if initial_prompt.endswith(".") else "✗", "Ends with period"),
+                    ("✓" if len(initial_prompt.split(", ")) >= 5 else "✗", f"Contains multiple terms ({len(initial_prompt.split(', '))} terms)")
+                ]
+                print(f"\n  ✅ Format Checks:")
+                for status, check in checks:
+                    print(f"    {status} {check}")
+            
+            print(f"\n{'='*60}\n")
         else:
             print("No active window detected")
         return

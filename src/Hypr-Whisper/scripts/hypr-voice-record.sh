@@ -97,7 +97,7 @@ sys.path.insert(0, '.')
 from hybrid_client import HybridWhisperClient
 import subprocess
 
-client = HybridWhisperClient('http://localhost:9090')
+client = HybridWhisperClient('http://localhost:9099')
 
 # Use same approach as hybrid_client.py --file but with fast polling
 client.create_session()
@@ -109,8 +109,8 @@ final_result = result if result else {'text': ''}
 if final_result and 'text' in final_result:
     text = final_result['text'].strip()
     if text:
-        # Type the text instantly with 1ms delay (fastest possible)
-        subprocess.run(['wtype', '-d', '1', text], capture_output=True)
+        # Type the text instantly using ydotool with 1ms delays (fastest)
+        subprocess.run(['ydotool', 'type', '-d', '1', '-H', '1', text], capture_output=True)
         print(f'{text}')
     else:
         print('__NO_SPEECH__')

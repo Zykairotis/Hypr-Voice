@@ -66,7 +66,7 @@ audio:
   
 # Server
 server:
-  port: 9090
+  port: 9099
   max_clients: 4
 ```
 

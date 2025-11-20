@@ -1,0 +1,14 @@
+# Gemini Live Integration Requirements
+
+# Core Gemini API
+google-genai>=1.0.0
+
+# Image processing
+Pillow>=10.0.0
+
+# TUI interface
+rich>=13.0.0
+
+# Environment variable management (optional)
+python-dotenv>=1.0.0
+

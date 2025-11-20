@@ -121,7 +121,7 @@ python wltype_integration.py \
   --device 0 \
   --typing-speed 0.05 \
   --refresh-interval 3 \
-  --server http://localhost:9090
+  --server http://localhost:9099
 ```
 
 ### Example Scenarios
@@ -225,7 +225,7 @@ python wltype_integration.py \
   --language auto \
   --type-speed 15 \
   --timeout 300 \
-  --server http://localhost:9090
+  --server http://localhost:9099
 ```
 
 ### Example Scenarios

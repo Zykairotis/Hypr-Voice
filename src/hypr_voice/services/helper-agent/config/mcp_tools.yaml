@@ -1,0 +1,411 @@
+# MCP (Model Context Protocol) Tools Configuration
+# Defines available tools for function calling and tool use
+
+# Global MCP Settings
+mcp:
+  enabled: true
+  protocol_version: "1.0"
+  auth_required: false
+  max_parallel_tools: 5
+  tool_timeout: 30
+  error_handling: "graceful"  # graceful, strict
+
+# Tool Definitions
+tools:
+  # Summarization Tool
+  summarize_text:
+    enabled: true
+    name: "summarize_text"
+    description: "Summarize text content for voice agent consumption with configurable length and style"
+    category: "text_processing"
+    parameters:
+      type: "object"
+      properties:
+        text:
+          type: "string"
+          description: "The text content to summarize"
+        max_length:
+          type: "integer"
+          description: "Maximum length of the summary in characters"
+          default: 500
+          minimum: 50
+          maximum: 2000
+        style:
+          type: "string"
+          description: "Summary style: voice_optimized, concise, or detailed"
+          enum: ["voice_optimized", "concise", "detailed"]
+          default: "voice_optimized"
+        focus:
+          type: "string"
+          description: "Specific focus area: technical, actionable, key_points, or decisions"
+          enum: ["technical", "actionable", "key_points", "decisions"]
+          nullable: true
+      required: ["text"]
+    returns:
+      type: "object"
+      properties:
+        summary:
+          type: "string"
+        key_points:
+          type: "array"
+          items:
+            type: "string"
+        metadata:
+          type: "object"
+    examples:
+      - input:
+          text: "Long article about AI developments..."
+          max_length: 300
+          style: "concise"
+        output:
+          summary: "AI developments focus on..."
+          key_points: ["Point 1", "Point 2"]
+
+  # Content Analysis Tool
+  analyze_content:
+    enabled: true
+    name: "analyze_content"
+    description: "Analyze content for voice agent optimization including sentiment, readability, and key insights"
+    category: "text_processing"
+    parameters:
+      type: "object"
+      properties:
+        content:
+          type: "string"
+          description: "Content to analyze"
+        analysis_type:
+          type: "string"
+          description: "Type of analysis to perform"
+          enum: ["comprehensive", "sentiment", "readability", "technical"]
+          default: "comprehensive"
+        optimize_for_voice:
+          type: "boolean"
+          description: "Whether to optimize analysis for voice output"
+          default: true
+      required: ["content"]
+    returns:
+      type: "object"
+      properties:
+        analysis:
+          type: "object"
+        recommendations:
+          type: "array"
+        score:
+          type: "number"
+    examples:
+      - input:
+          content: "Sample text to analyze..."
+          analysis_type: "sentiment"
+        output:
+          analysis:
+            sentiment: "positive"
+            confidence: 0.85
+
+  # Task Planning Tool
+  plan_task:
+    enabled: true
+    name: "plan_task"
+    description: "Break down complex tasks into actionable steps with priorities and time estimates"
+    category: "planning"
+    parameters:
+      type: "object"
+      properties:
+        task:
+          type: "string"
+          description: "Task description to plan"
+        max_steps:
+          type: "integer"
+          description: "Maximum number of steps to generate"
+          default: 10
+          minimum: 1
+          maximum: 20
+        context:
+          type: "string"
+          description: "Additional context for planning"
+          nullable: true
+        complexity:
+          type: "string"
+          description: "Task complexity level"
+          enum: ["simple", "medium", "complex"]
+          default: "medium"
+      required: ["task"]
+    returns:
+      type: "object"
+      properties:
+        plan:
+          type: "array"
+          items:
+            type: "object"
+        estimated_time:
+          type: "string"
+        priority:
+          type: "string"
+    examples:
+      - input:
+          task: "Build a web application"
+          max_steps: 5
+        output:
+          plan:
+            - step: "Design database schema"
+              priority: "high"
+
+  # Web Search Tool (for online information)
+  web_search:
+    enabled: false  # Enable if needed
+    name: "web_search"
+    description: "Search the web for current information"
+    category: "information_retrieval"
+    parameters:
+      type: "object"
+      properties:
+        query:
+          type: "string"
+          description: "Search query"
+        max_results:
+          type: "integer"
+          description: "Maximum number of results to return"
+          default: 5
+          minimum: 1
+          maximum: 10
+      required: ["query"]
+    returns:
+      type: "object"
+      properties:
+        results:
+          type: "array"
+          items:
+            type: "object"
+    rate_limit:
+      calls_per_minute: 10
+
+  # Calculator Tool
+  calculator:
+    enabled: true
+    name: "calculator"
+    description: "Perform mathematical calculations"
+    category: "computation"
+    parameters:
+      type: "object"
+      properties:
+        expression:
+          type: "string"
+          description: "Mathematical expression to evaluate"
+        precision:
+          type: "integer"
+          description: "Number of decimal places"
+          default: 2
+          minimum: 0
+          maximum: 10
+      required: ["expression"]
+    returns:
+      type: "object"
+      properties:
+        result:
+          type: "number"
+        formatted:
+          type: "string"
+    examples:
+      - input:
+          expression: "2 + 2 * 3"
+        output:
+          result: 8
+          formatted: "8.00"
+
+  # File Operations Tool
+  file_operations:
+    enabled: false  # Disabled by default for security
+    name: "file_operations"
+    description: "Perform safe file operations (read, write, list)"
+    category: "file_system"
+    security:
+      sandboxed: true
+      allowed_paths: ["/tmp/helper-agent"]
+      max_file_size: 10485760  # 10MB
+    parameters:
+      type: "object"
+      properties:
+        operation:
+          type: "string"
+          description: "Operation to perform"
+          enum: ["read", "write", "list", "delete"]
+        path:
+          type: "string"
+          description: "File path"
+        content:
+          type: "string"
+          description: "Content to write (for write operation)"
+          nullable: true
+      required: ["operation", "path"]
+    returns:
+      type: "object"
+      properties:
+        success:
+          type: "boolean"
+        data:
+          type: "string"
+
+  # Code Execution Tool
+  code_execution:
+    enabled: false  # Disabled by default for security
+    name: "code_execution"
+    description: "Execute code in a sandboxed environment"
+    category: "computation"
+    security:
+      sandboxed: true
+      timeout: 5
+      memory_limit: "256MB"
+      allowed_languages: ["python", "javascript"]
+    parameters:
+      type: "object"
+      properties:
+        code:
+          type: "string"
+          description: "Code to execute"
+        language:
+          type: "string"
+          description: "Programming language"
+          enum: ["python", "javascript"]
+          default: "python"
+      required: ["code"]
+    returns:
+      type: "object"
+      properties:
+        output:
+          type: "string"
+        error:
+          type: "string"
+        execution_time:
+          type: "number"
+
+  # Claude SDK Bridge Tool
+  claude_sdk_bridge:
+    enabled: true
+    name: "claude_sdk_bridge"
+    description: "Bridge to Claude Code SDK for context-aware assistance"
+    category: "ai_integration"
+    parameters:
+      type: "object"
+      properties:
+        request:
+          type: "string"
+          description: "Request to process"
+        context:
+          type: "object"
+          description: "Additional context"
+          nullable: true
+        voice_optimized:
+          type: "boolean"
+          description: "Optimize response for voice output"
+          default: true
+      required: ["request"]
+    returns:
+      type: "object"
+      properties:
+        response:
+          type: "string"
+        metadata:
+          type: "object"
+
+  # Information Extraction Tool
+  extract_information:
+    enabled: true
+    name: "extract_information"
+    description: "Extract specific types of information from text"
+    category: "text_processing"
+    parameters:
+      type: "object"
+      properties:
+        text:
+          type: "string"
+          description: "Text to extract from"
+        information_types:
+          type: "array"
+          description: "Types of information to extract"
+          items:
+            type: "string"
+            enum: ["dates", "people", "locations", "actions", "technical_terms", "decisions"]
+          default: ["actions", "key_points", "decisions"]
+      required: ["text"]
+    returns:
+      type: "object"
+      properties:
+        extracted:
+          type: "object"
+        confidence:
+          type: "number"
+
+# Tool Categories
+categories:
+  text_processing:
+    description: "Tools for text analysis and manipulation"
+    tools: ["summarize_text", "analyze_content", "extract_information"]
+  planning:
+    description: "Tools for task planning and organization"
+    tools: ["plan_task"]
+  computation:
+    description: "Tools for calculations and code execution"
+    tools: ["calculator", "code_execution"]
+  information_retrieval:
+    description: "Tools for retrieving information"
+    tools: ["web_search"]
+  ai_integration:
+    description: "Tools for integrating with other AI services"
+    tools: ["claude_sdk_bridge"]
+  file_system:
+    description: "Tools for file operations"
+    tools: ["file_operations"]
+
+# Tool Authorization
+authorization:
+  # Define which tools require special permissions
+  public_tools:
+    - summarize_text
+    - analyze_content
+    - plan_task
+    - calculator
+    - extract_information
+    - claude_sdk_bridge
+  
+  restricted_tools:
+    - web_search
+    - file_operations
+    - code_execution
+  
+  # Tool access control
+  access_control:
+    enabled: false
+    require_api_key: false
+
+# Tool Execution Configuration
+execution:
+  async_execution: true
+  parallel_execution: true
+  max_concurrent: 5
+  queue_size: 100
+  timeout: 30
+  retry_on_failure: true
+  max_retries: 3
+
+# Tool Response Formatting
+response_format:
+  include_metadata: true
+  include_timing: true
+  include_tool_name: true
+  pretty_print: false
+  voice_optimize: true  # Optimize responses for TTS
+
+# Error Handling
+error_handling:
+  verbose_errors: false
+  include_stack_trace: false
+  fallback_on_error: true
+  default_error_message: "Tool execution encountered an error"
+
+# Logging Configuration
+logging:
+  log_tool_calls: true
+  log_parameters: true
+  log_results: false  # Can be verbose
+  log_errors: true
+  log_level: "INFO"
+

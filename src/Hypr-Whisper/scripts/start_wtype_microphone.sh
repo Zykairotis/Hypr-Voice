@@ -1,5 +1,5 @@
 #!/bin/bash
-# Quick start script for wtype integration - Microphone mode (for voice input)
+# Quick start script for ydotool integration - Microphone mode (for voice input)
 
 set -e
 
@@ -16,7 +16,7 @@ BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-echo -e "${BLUE}🎤 Starting wtype Voice-to-Type (Microphone Mode)${NC}"
+echo -e "${BLUE}🎤 Starting ydotool Voice-to-Type (Microphone Mode)${NC}"
 echo ""
 
 # Check if venv exists
@@ -25,16 +25,16 @@ if [ ! -d "$VENV_PATH" ] || [ ! -f "$VENV_PATH/bin/python" ]; then
     exit 1
 fi
 
-# Check if wtype is installed
-if ! command -v wtype &> /dev/null; then
-    echo -e "${RED}[ERROR]${NC} wtype not found!"
-    echo -e "${YELLOW}[INFO]${NC} Install with: sudo apt-get install wtype"
+# Check if ydotool is installed
+if ! command -v ydotool &> /dev/null; then
+    echo -e "${RED}[ERROR]${NC} ydotool not found!"
+    echo -e "${YELLOW}[INFO]${NC} Install with: sudo pacman -S ydotool (Arch) or build from source"
     exit 1
 fi
 
 # Check if server is running
-if ! curl -s http://localhost:9090/health > /dev/null 2>&1; then
-    echo -e "${YELLOW}[WARN]${NC} Server not responding at http://localhost:9090"
+if ! curl -s http://localhost:9099/health > /dev/null 2>&1; then
+    echo -e "${YELLOW}[WARN]${NC} Server not responding at http://localhost:9099"
     echo -e "${YELLOW}[INFO]${NC} Start server with: ./scripts/start_hybrid_server.sh"
     echo ""
     read -p "Continue anyway? (y/N) " -n 1 -r
@@ -47,7 +47,7 @@ fi
 cd "$WHISPER_ROOT"
 
 echo -e "${GREEN}[INFO]${NC} Audio device: System default microphone"
-echo -e "${GREEN}[INFO]${NC} Server: http://localhost:9090"
+echo -e "${GREEN}[INFO]${NC} Server: http://localhost:9099"
 echo -e "${GREEN}[INFO]${NC} Mode: Real-time voice-to-type"
 echo ""
 echo -e "${YELLOW}IMPORTANT:${NC}"

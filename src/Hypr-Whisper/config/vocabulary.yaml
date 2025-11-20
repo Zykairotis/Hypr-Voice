@@ -275,6 +275,26 @@ applications:
       - UAT
       - staging
       - production
+  cursor:
+    window_class_patterns:
+    - cursor
+    - Cursor
+    vocabulary:
+      ai_terms:
+      - copilot
+      - completion
+      - suggestion
+      - refactor
+      - AI
+      - assistant
+      - inline
+      - snippet
+      code_actions:
+      - extract
+      - rename
+      - organize imports
+      - format document
+      - quick fix
 settings:
   enhancement_method: prompt_engineering
   prompt_engineering:
@@ -305,5 +325,8 @@ settings:
     custom_words: []
 detection:
   method: hyprland
-  update_interval: 500
+  update_interval: 200
   fallback_vocabulary: global
+  context_sources:
+    shell_history: 40
+    clipboard_history: 5

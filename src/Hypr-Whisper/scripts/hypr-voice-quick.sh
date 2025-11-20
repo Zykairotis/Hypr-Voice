@@ -67,7 +67,7 @@ if os.path.getsize(audio_file) < 1000:
     print('Audio file too small, no recording')
     sys.exit(1)
 
-client = HybridWhisperClient('http://localhost:9090')
+client = HybridWhisperClient('http://localhost:9099')
 
 # Use same approach as hybrid_client.py --file but with fast polling
 client.create_session()
@@ -84,8 +84,8 @@ if result and 'text' in result:
     text = result['text'].strip()
     if text:
         print(f'✅ Transcribed: {text}')
-        # Type the text instantly with 1ms delay (fastest possible)
-        subprocess.run(['wtype', '-d', '1', text], capture_output=True)
+        # Type the text instantly using ydotool with 1ms delays (fastest)
+        subprocess.run(['ydotool', 'type', '-d', '1', '-H', '1', text], capture_output=True)
         # Notify
         if notify_enabled:
             subprocess.run(['notify-send', '✅ Typed', text[:100]], capture_output=True)
