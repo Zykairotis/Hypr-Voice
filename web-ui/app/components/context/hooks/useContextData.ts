@@ -100,7 +100,8 @@ export function useContextData() {
   useEffect(() => {
     if (!state.realtimeEnabled) return;
 
-    const ws = new WebSocket('ws://localhost:9090/ws/context');
+    const wsUrl = process.env.NEXT_PUBLIC_CONTEXT_WS || 'ws://localhost:9091/ws';
+    const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
       console.log('Context WebSocket connected');
@@ -109,10 +110,10 @@ export function useContextData() {
     ws.onmessage = (event) => {
       try {
         const update = JSON.parse(event.data);
-        if (update.type === 'context_update') {
+        if (update.type === 'context_update' || !update.type) {
           setState(prev => ({
             ...prev,
-            data: update.data,
+            data: update.data || update,
             lastUpdate: Date.now(),
           }));
         }

@@ -16,6 +16,10 @@ from difflib import SequenceMatcher
 from dataclasses import dataclass
 from loguru import logger
 
+# Local imports
+from window_backends import detect_backend
+import hook_bus
+
 # Import ContextManager
 try:
     from context_manager import ContextManager
@@ -53,8 +57,10 @@ class VocabularyManager:
         """
         self.config_dir = Path(config_path) if config_path else Path(__file__).parent / "config"
         self.vocabularies: Dict[str, VocabularyConfig] = {}
+        self.backend_overlays: Dict[str, Dict] = {}
         self.current_app: Optional[str] = None
         self.current_vocabulary: Optional[str] = None
+        self.current_backend: Optional[str] = None
         self.active_keywords: Set[str] = set()
 
         # Initialize ContextManager
@@ -65,6 +71,14 @@ class VocabularyManager:
 
         # Load configurations
         self.load_configurations()
+
+        # Detect backend once (cached in window_backends) and set baseline
+        try:
+            self.current_backend = detect_backend().name
+            logger.info(f"Vocabulary manager detected backend: {self.current_backend}")
+        except Exception as e:
+            logger.warning(f"Could not detect backend for vocabulary overlays: {e}")
+            self.current_backend = None
 
         # Start application detection
         self._detection_task = None
@@ -115,6 +129,17 @@ class VocabularyManager:
                 priority=-1
             )
             self.vocabularies['global'] = global_vocab
+
+        # Load backend overlays (optional)
+        overlays_file = self.config_dir / "backend_overlays.yaml"
+        if overlays_file.exists():
+            try:
+                with open(overlays_file, 'r') as f:
+                    data = yaml.safe_load(f) or {}
+                self.backend_overlays = data.get('backends', {}) or {}
+                logger.info(f"Loaded backend overlays for {len(self.backend_overlays)} backends")
+            except Exception as e:
+                logger.error(f"Error loading backend overlays: {e}")
 
     def detect_active_application(self) -> Optional[str]:
         """
@@ -173,16 +198,29 @@ class VocabularyManager:
 
         return None
 
-    def update_vocabulary(self, app_name: Optional[str] = None, app_title: Optional[str] = None):
+    def update_vocabulary(self, app_name: Optional[str] = None, app_title: Optional[str] = None, backend: Optional[str] = None):
         """
         Update active vocabulary based on current application.
 
         Args:
             app_name: Optional application name override
             app_title: Optional application title
+            backend: Optional backend name (hyprland/gnome/kde/sway/x11/manual)
         """
         if app_name is None:
             app_name = self.detect_active_application()
+
+        # Track backend changes
+        if backend:
+            if backend != self.current_backend:
+                logger.info(f"Backend changed {self.current_backend} -> {backend}")
+                self.current_backend = backend
+                hook_bus.emit('backend_change', backend_name=backend)
+        elif self.current_backend is None:
+            try:
+                self.current_backend = detect_backend().name
+            except Exception:
+                self.current_backend = None
 
         self.current_app = app_name
 
@@ -196,10 +234,11 @@ class VocabularyManager:
             vocab_name = 'global'
 
         # Update if vocabulary changed
-        if self.current_vocabulary != vocab_name:
+        if self.current_vocabulary != vocab_name or backend:
             self.current_vocabulary = vocab_name
             self.active_keywords = self._get_active_keywords(vocab_name)
-            logger.info(f"Switched to vocabulary: {vocab_name} (app: {app_name})")
+            logger.info(f"Switched to vocabulary: {vocab_name} (app: {app_name}, backend: {self.current_backend})")
+            hook_bus.emit('vocab_change', vocab_name=vocab_name, app_name=app_name, backend_name=self.current_backend)
 
     def _get_active_keywords(self, vocab_name: str) -> Set[str]:
         """
@@ -245,6 +284,13 @@ class VocabularyManager:
                 logger.debug(f"Added {len(context_vocab)} context-aware keywords")
             except Exception as e:
                 logger.error(f"Error getting context-aware keywords: {e}")
+
+        # Add backend overlay keywords (if available)
+        if self.current_backend and self.current_backend in self.backend_overlays:
+            overlay = self.backend_overlays[self.current_backend]
+            overlay_keywords = overlay.get('keywords', []) or []
+            keywords.update(overlay_keywords)
+            logger.debug(f"Added {len(overlay_keywords)} backend overlay keywords for {self.current_backend}")
 
         return keywords
 

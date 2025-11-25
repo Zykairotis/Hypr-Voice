@@ -5,7 +5,7 @@
 # Application Detection Settings
 application_detection:
   enabled: true
-  method: hyprland  # hyprland, x11, or manual
+  method: auto  # auto, hyprland, sway, gnome, kde, x11, manual
   update_interval: 200  # milliseconds
   fallback_behavior: global  # What to do when detection fails
 
@@ -100,4 +100,3 @@ logging:
   level: INFO  # DEBUG, INFO, WARNING, ERROR
   log_context_updates: true
   log_extraction: false  # Very verbose
-

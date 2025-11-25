@@ -22,6 +22,8 @@ from loguru import logger
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from hybrid_client import HybridWhisperClient
 from vocabulary_manager import get_vocabulary_manager
+from window_backends import detect_backend
+from input_backends import detect_input_backend
 
 # ============================================================================
 # CONFIGURATION
@@ -89,28 +91,25 @@ def find_device_by_name(device_name):
     return device_id
 
 # ============================================================================
-# YDOTOOL INTEGRATION
+# INPUT DISPATCHER (prefers ydotool, falls back safely)
 # ============================================================================
 
+WINDOW_BACKEND = detect_backend()
+INPUT_BACKEND = detect_input_backend(window_backend=WINDOW_BACKEND.name)
+
+
 def type_text_words(text, words_per_second=10):
-    """Type text word-by-word using ydotool - fast for PTT."""
-    words = text.split()
-    delay = 1.0 / words_per_second
-    
-    for i, word in enumerate(words):
-        # Add space before word (except first word)
-        if i > 0:
-            subprocess.run(["ydotool", "type", "-d", "1", "-H", "1", " " + word], capture_output=True)
-        else:
-            subprocess.run(["ydotool", "type", "-d", "1", "-H", "1", word], capture_output=True)
-        time.sleep(delay)
+    """Type text word-by-word using the selected input backend."""
+    ok = INPUT_BACKEND.type_text_words(text, words_per_second=words_per_second)
+    if not ok:
+        logger.warning(f"Typing (word mode) failed via backend {INPUT_BACKEND.name}")
+
 
 def type_text_instant(text):
-    """Type entire text instantly using ydotool with 1ms delays (fastest possible)."""
-    try:
-        subprocess.run(["ydotool", "type", "-d", "1", "-H", "1", text], capture_output=True, check=True)
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Error typing text: {e}")
+    """Type entire text using the selected input backend."""
+    ok = INPUT_BACKEND.type_text_instant(text)
+    if not ok:
+        logger.warning(f"Typing (instant) failed via backend {INPUT_BACKEND.name}")
 
 # ============================================================================
 # PUSH-TO-TALK RECORDER

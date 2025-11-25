@@ -201,46 +201,56 @@ class ContextManager:
         
         return sorted(list(vocab_words))  # Return sorted for consistent display
     
-    def extract_context_from_hyprland(self, window_info: Dict) -> Dict[str, any]:
-        """
-        Extract detailed context information from Hyprland window data.
-        
-        Args:
-            window_info: Dictionary containing window information from hyprctl
-            
-        Returns:
-            Dictionary containing extracted context
-        """
+    def extract_context_from_window(self, window_info: Dict) -> Dict[str, any]:
+        """Extract context from a normalized window info dict (any backend)."""
+        application = (
+            window_info.get('class', '')
+            or window_info.get('wm_class', '')
+            or window_info.get('app_id', '')
+        )
+
         context = {
-            'application': window_info.get('class', ''),
+            'application': application,
             'title': window_info.get('title', ''),
             'keywords': set(),
             'metadata': {}
         }
-        
+
         # Extract keywords from window title
-        title = window_info.get('title', '')
+        title = window_info.get('title', '') or ''
         if title:
             # Extract file names, paths
-            file_patterns = re.findall(r'[\w\-]+\.\w+', title)  # file.ext
+            file_patterns = re.findall(r'[\w\-]+\.\w+', title)
             context['keywords'].update(file_patterns)
-            
+
             # Extract paths
             path_patterns = re.findall(r'/[\w/\-\.]+', title)
             context['keywords'].update(path_patterns)
-            
+
             # Extract technical terms (CamelCase, snake_case)
             tech_terms = re.findall(r'[A-Z][a-z]+(?:[A-Z][a-z]+)+|\w+_\w+', title)
             context['keywords'].update(tech_terms)
-        
-        # Store window metadata
+
+        # Store window metadata (preserve legacy fields)
         context['metadata'] = {
             'class': window_info.get('class', ''),
             'initialClass': window_info.get('initialClass', ''),
             'initialTitle': window_info.get('initialTitle', ''),
+            'backend': window_info.get('backend', ''),
+            'app_id': window_info.get('app_id', ''),
+            'wm_class': window_info.get('wm_class', ''),
+            'pid': window_info.get('pid'),
+            'workspace': window_info.get('workspace', ''),
         }
-        
+
+        if 'raw' in window_info:
+            context['metadata']['raw'] = window_info.get('raw')
+
         return context
+
+    def extract_context_from_hyprland(self, window_info: Dict) -> Dict[str, any]:
+        """Backward-compatible wrapper for existing Hyprland callers."""
+        return self.extract_context_from_window(window_info)
     
     def get_comprehensive_context(self, window_info: Dict = None) -> Dict[str, any]:
         """
@@ -287,7 +297,7 @@ class ContextManager:
         # Add window context if available
         window_vocab = []
         if window_info:
-            window_context = self.extract_context_from_hyprland(window_info)
+            window_context = self.extract_context_from_window(window_info)
             window_vocab = list(window_context['keywords'])
             context_metadata['window'] = {
                 'application': window_context['application'],
@@ -311,4 +321,3 @@ def get_context_manager():
     if '_context_manager_instance' not in globals():
         _context_manager_instance = ContextManager()
     return _context_manager_instance
-

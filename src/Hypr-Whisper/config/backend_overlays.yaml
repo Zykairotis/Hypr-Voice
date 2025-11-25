@@ -1,0 +1,32 @@
+# Backend-specific vocabulary overlays (optional)
+# Keywords here are appended to active vocabulary when the matching backend is active.
+
+backends:
+  hyprland:
+    keywords:
+      - Hyprland
+      - wlroots
+      - hyprctl
+  sway:
+    keywords:
+      - Sway
+      - wlroots
+      - swaymsg
+  gnome:
+    keywords:
+      - GNOME
+      - Mutter
+      - gdbus
+  kde:
+    keywords:
+      - KDE
+      - Plasma
+      - KWin
+      - kdotool
+  x11:
+    keywords:
+      - Xorg
+      - EWMH
+      - xdotool
+  manual:
+    keywords: []

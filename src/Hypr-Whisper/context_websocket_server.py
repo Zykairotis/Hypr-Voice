@@ -22,6 +22,7 @@ class ContextWebSocketServer:
         self.port = port
         self.clients: Dict[str, WebSocketServerProtocol] = {}
         self.running = False
+        self.app_detector = None  # Will be injected
 
         # Import context manager
         try:
@@ -32,7 +33,11 @@ class ContextWebSocketServer:
             logger.error("Context manager not available")
             self.context_manager = None
 
-    async def register_client(self, websocket: WebSocketServerProtocol, path: str):
+    def set_app_detector(self, detector):
+        """Set the application detector instance."""
+        self.app_detector = detector
+
+    async def register_client(self, websocket: WebSocketServerProtocol, path: str = ""):
         """Register a new WebSocket client."""
         client_id = f"{websocket.remote_address[0]}:{websocket.remote_address[1]}"
         self.clients[client_id] = websocket
@@ -62,7 +67,12 @@ class ContextWebSocketServer:
             return
 
         try:
-            context_data = self.context_manager.get_comprehensive_context()
+            # Get current window info if available
+            window_info = None
+            if self.app_detector:
+                window_info = self.app_detector.get_active_window()
+
+            context_data = self.context_manager.get_comprehensive_context(window_info)
             await websocket.send(json.dumps({
                 'type': 'context_update',
                 'data': context_data
@@ -96,8 +106,36 @@ class ContextWebSocketServer:
             return
 
         try:
+            # Get current window info if available
+            window_info = None
+            if self.app_detector:
+                window_info = self.app_detector.get_active_window()
+
             # Get current context
-            context_data = self.context_manager.get_comprehensive_context()
+            context_data = self.context_manager.get_comprehensive_context(window_info)
+
+            # Enrich with backend + vocabulary metadata if available
+            backend_name = None
+            vocab_name = None
+            try:
+                from window_backends import detect_backend
+                backend_name = detect_backend().name
+            except Exception:
+                pass
+            try:
+                from vocabulary_manager import get_vocabulary_manager
+                vm = get_vocabulary_manager()
+                vocab_name = vm.current_vocabulary
+            except Exception:
+                pass
+
+            context_data = {
+                **context_data,
+                'meta': {
+                    'backend': backend_name,
+                    'vocabulary': vocab_name,
+                }
+            }
 
             # Format for WebSocket
             message = json.dumps({
@@ -125,8 +163,14 @@ class ContextWebSocketServer:
             return
 
         try:
-            # Extract context from window
-            window_context = self.context_manager.extract_context_from_hyprland(window_info)
+            # Extract context from window (backend-agnostic)
+            window_context = self.context_manager.extract_context_from_window(window_info)
+            if isinstance(window_info, dict) and 'backend' in window_info:
+                window_context['backend'] = window_info.get('backend')
+
+            # Ensure JSON-serializable payload
+            if isinstance(window_context.get('keywords'), set):
+                window_context['keywords'] = list(window_context['keywords'])
 
             message = json.dumps({
                 'type': 'window_change',
@@ -200,6 +244,10 @@ class ContextMonitor:
             from scripts.app_detector import ApplicationDetector
             self.app_detector = ApplicationDetector()
             logger.info("Application detector initialized")
+            
+            # Inject into WS server
+            self.ws_server.set_app_detector(self.app_detector)
+            
         except ImportError:
             logger.warning("Application detector not available")
             self.app_detector = None
@@ -230,7 +278,12 @@ class ContextMonitor:
                                 if vocab_manager:
                                     app_class = window_info.get('class', '')
                                     app_title = window_info.get('title', '')
-                                    vocab_manager.update_vocabulary(app_class, app_title)
+                                    vocab_manager.update_vocabulary(app_class, app_title, backend=self.app_detector.backend.name)
+                                    try:
+                                        import hook_bus
+                                        hook_bus.emit('window_change', window_info=window_info)
+                                    except Exception:
+                                        pass
                             except ImportError:
                                 pass
 
@@ -250,7 +303,7 @@ async def main():
     # Create WebSocket server
     ws_server = ContextWebSocketServer(host='0.0.0.0', port=9091)
 
-    # Create monitor
+    # Create monitor (which now injects app_detector into ws_server)
     monitor = ContextMonitor(ws_server)
 
     try:

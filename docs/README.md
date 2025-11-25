@@ -67,22 +67,26 @@ cd hypr-voice
 ## 📖 Documentation
 
 ### 📚 Getting Started
-- **[Installation Guide](hypr-voice/docs/installation/START_HERE.md)** - Complete setup instructions
-- **[Quick Start](hypr-voice/docs/installation/quick-start.md)** - Up and running in 5 minutes
-- **[Installation Checklist](hypr-voice/docs/installation/installation-checklist.md)** - Step-by-step verification
+- **[Installation Guide](installation/START_HERE.md)** - Complete setup instructions
+- **[Quick Start](installation/quick-start.md)** - Up and running in 5 minutes
+- **[Installation Checklist](installation/installation-checklist.md)** - Step-by-step verification
 
 ### 🛠️ Configuration & Usage
-- **[Setup Guide](hypr-voice/docs/guides/setup-guide.md)** - Comprehensive configuration reference
-- **[Troubleshooting](hypr-voice/docs/guides/setup-guide.md#troubleshooting)** - Common issues and solutions
+- **[Setup Guide](guides/setup-guide.md)** - Comprehensive configuration reference
+- **[Troubleshooting](guides/setup-guide.md#troubleshooting)** - Common issues and solutions
 
 ### ⚡ Features
-- **[Audio Level Visualization](hypr-voice/docs/features/audio-level-visualization.md)** - Real-time audio feedback
-- **[Clipboard Paste Fix](hypr-voice/docs/features/paste-fix.md)** - Universal paste support for all apps
+- **[Audio Level Visualization](features/audio-level-visualization.md)** - Real-time audio feedback
+- **[Clipboard Paste Fix](features/paste-fix.md)** - Universal paste support for all apps
 
 ### 🔧 Technical Details
-- **[Implementation Summary](hypr-voice/docs/technical/implementation-summary.md)** - Technical overview
-- **[Architecture](hypr-voice/README.md)** - Detailed system architecture
-- **[Scripts Overview](hypr-voice/docs/technical/scripts-overview.txt)** - Available utility scripts
+- **[Implementation Summary](technical/implementation-summary.md)** - Technical overview
+- **[Architecture](../src/Hypr-Whisper/README.md)** - Detailed system architecture
+- **[Scripts Overview](technical/scripts-overview.txt)** - Available utility scripts
+
+### 📁 Project Documentation
+- **[Project Documentation](../docs/project/README.md)** - Core project documentation and guides
+- **[Web UI Documentation](../web-ui/README.md)** - Modern web interface documentation
 
 ## 🎯 Supported Applications
 

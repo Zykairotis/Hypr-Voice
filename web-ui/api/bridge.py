@@ -12,13 +12,19 @@ import json
 from pathlib import Path
 import asyncio
 import aiohttp
+import os
 
 app = FastAPI(title="Hypr-Voice Web UI Bridge", version="1.0.0")
 
 # CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8933", "http://localhost:3000", "http://localhost:3001"],
+    allow_origins=[
+        "http://localhost:8933",
+        "http://127.0.0.1:8933",
+        "http://localhost:3000",
+        "http://localhost:3001",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -110,7 +116,7 @@ async def get_whisper_status():
     """Get Whisper server status"""
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get("http://localhost:9090/", timeout=2) as resp:
+            async with session.get("http://localhost:9099/", timeout=2) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     return {"status": "online", **data}
@@ -123,7 +129,7 @@ async def get_audio_devices():
     """Get available audio input devices"""
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get("http://localhost:9090/api/audio/devices") as resp:
+            async with session.get("http://localhost:9099/api/audio/devices") as resp:
                 if resp.status == 200:
                     return await resp.json()
     except Exception:
@@ -440,7 +446,7 @@ async def get_agent_status():
     """Get Agent server status"""
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get("http://localhost:8922/agents/list", timeout=2) as resp:
+            async with session.get("http://localhost:9093/agents", timeout=2) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     return {"status": "online", "agents": data.get("agents", [])}
@@ -491,7 +497,7 @@ async def get_context():
         async with aiohttp.ClientSession() as session:
             try:
                 async with session.get(
-                    "http://localhost:9090/api/context",
+                    "http://localhost:9099/api/context",
                     timeout=aiohttp.ClientTimeout(total=2)
                 ) as response:
                     if response.status == 200:
@@ -532,67 +538,282 @@ async def get_context():
 async def websocket_context(websocket: WebSocket):
     """
     WebSocket endpoint for real-time context updates.
-    Streams context changes as they happen (every 100ms from Whisper server).
+
+    Polls the Whisper backend HTTP context endpoint (~10Hz) and streams
+    updates to the UI. This matches the existing UI schema and avoids CORS
+    mismatches seen when proxying raw upstream sockets.
     """
+
     await websocket.accept()
-    
-    last_context = None
-    connection_active = True
-    
-    try:
-        while connection_active:
+
+    upstream_url = os.getenv("CONTEXT_WS_UPSTREAM", "ws://localhost:9091")
+
+    async def transform_and_send(raw: Dict[str, Any]):
+        """Transform upstream data to UI schema and send."""
+        # Extract parts from upstream
+        context = raw.get("data", {}).get("context", {})
+        meta = raw.get("data", {}).get("meta", {})
+        
+        # Extract window info
+        window = context.get("window", {})
+        window_meta = window.get("metadata", {})
+        
+        # Map to UI payload
+        ui_payload = {
+            "workspace": {
+                "application": window.get("application", "") or window_meta.get("class", "") or "None",
+                "category": window_meta.get("category", "other"), # backend might not provide category yet
+                "window_title": window.get("title", ""),
+                "active_file": None, # TODO: Extract from title if possible
+                "states": {},
+                "workspace_name": window_meta.get("workspace", ""),
+                "monitor": None,
+                "pid": window_meta.get("pid"),
+            },
+            "recent_activity": {
+                "commands": context.get("shell", {}).get("recent_commands", []),
+                "clipboard": context.get("clipboard", {}).get("recent_entries", []),
+                "keywords": raw.get("data", {}).get("vocabulary", [])
+            },
+            "project_context": {
+                "git_branch": None,
+                "git_status": None,
+                "project_root": None
+            },
+            "hooks": {
+                "triggered": [],
+                "context_additions": {}
+            },
+            "meta": meta,
+        }
+        
+        await websocket.send_json({
+            "type": "context_update",
+            "data": ui_payload
+        })
+    async def relay():
+        retry_delay = 1
+        while True:
             try:
-                # Get context from hybrid server
                 async with aiohttp.ClientSession() as session:
-                    try:
-                        async with session.get(
-                            "http://localhost:9090/api/context",
-                            timeout=aiohttp.ClientTimeout(total=2)
-                        ) as response:
-                            if response.status == 200:
-                                data = await response.json()
-                                
-                                # Only send if context changed
-                                if data != last_context:
-                                    try:
-                                        await websocket.send_json(data)
-                                        last_context = data
-                                    except RuntimeError as e:
-                                        # WebSocket already closed
-                                        connection_active = False
-                                        break
-                    except asyncio.TimeoutError:
-                        # Silently skip on timeout, don't spam errors
-                        pass
-                    except Exception:
-                        # Skip other aiohttp errors
-                        pass
-                
-                # Wait 100ms before next check (matching server update rate)
-                await asyncio.sleep(0.1)
-                
-            except WebSocketDisconnect:
-                connection_active = False
-                break
-            except RuntimeError:
-                # WebSocket closed
-                connection_active = False
+                    async with session.ws_connect(upstream_url, heartbeat=15) as upstream:
+                        retry_delay = 1
+                        async for msg in upstream:
+                            if msg.type == aiohttp.WSMsgType.TEXT:
+                                try:
+                                    raw = json.loads(msg.data)
+                                    await transform_and_send(raw if isinstance(raw, dict) else {})
+                                except Exception:
+                                    pass
+                            elif msg.type == aiohttp.WSMsgType.ERROR:
+                                break
+            except asyncio.CancelledError:
                 break
             except Exception as e:
-                # Only log unexpected errors
-                if "close message" not in str(e).lower():
-                    print(f"Unexpected WebSocket error: {e}")
-                connection_active = False
-                break
-                
+                print(f"Upstream context WS reconnect in {retry_delay}s: {e}")
+                await asyncio.sleep(min(retry_delay, 5))
+                retry_delay = min(retry_delay * 2, 10)
+
+    relay_task = asyncio.create_task(relay())
+
+    try:
+        await relay_task
     except WebSocketDisconnect:
-        pass  # Client disconnected gracefully
+        relay_task.cancel()
     except Exception as e:
         if "close message" not in str(e).lower():
             print(f"WebSocket connection error: {e}")
 
 
+# ============================================================================
+# ORCHESTRATOR ENDPOINTS
+# ============================================================================
+
+class OrchestratorQuery(BaseModel):
+    query: str
+    session_id: Optional[str] = None
+
+
+class SpawnAgentRequest(BaseModel):
+    agent_type: str
+    task: str
+    parent_session: Optional[str] = None
+
+
+@app.get("/api/orchestrator/status")
+async def get_orchestrator_status():
+    """Get Agent Orchestrator status"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get("http://localhost:9093/health", timeout=2) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    return {"status": "online", **data}
+    except Exception as e:
+        return {"status": "offline", "error": str(e)}
+
+
+@app.get("/api/orchestrator/agents")
+async def list_orchestrator_agents():
+    """List all active agents in the orchestrator"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get("http://localhost:9093/agents", timeout=5) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                return {"agents": [], "error": "Failed to fetch agents"}
+    except Exception as e:
+        return {"agents": [], "error": str(e)}
+
+
+@app.get("/api/orchestrator/agent-types")
+async def get_agent_types():
+    """Get available agent types"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get("http://localhost:9093/agent-types", timeout=5) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+    except:
+        pass
+    
+    # Return default agent types if orchestrator not available
+    return {
+        "types": [
+            {
+                "name": "code-worker",
+                "description": "Code analysis, generation, and refactoring tasks",
+                "tools": ["Read", "Write", "Edit", "Grep", "Glob"],
+                "model": "sonnet"
+            },
+            {
+                "name": "research-worker", 
+                "description": "Research, information gathering, and documentation tasks",
+                "tools": ["Read", "Grep", "Glob"],
+                "model": "haiku"
+            },
+            {
+                "name": "shell-worker",
+                "description": "System operations and bash commands",
+                "tools": ["Bash", "Read", "Grep"],
+                "model": "sonnet"
+            },
+            {
+                "name": "voice-worker",
+                "description": "Text-to-speech and speech-to-text operations",
+                "tools": ["Read"],
+                "model": "haiku"
+            }
+        ]
+    }
+
+
+@app.post("/api/orchestrator/query")
+async def orchestrator_query(request: OrchestratorQuery):
+    """Send a query to the orchestrator"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "http://localhost:9093/query",
+                json={"query": request.query, "session_id": request.session_id},
+                timeout=60
+            ) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                return {"error": f"Orchestrator returned status {resp.status}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.post("/api/orchestrator/spawn")
+async def spawn_agent(request: SpawnAgentRequest):
+    """Spawn a new agent"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "http://localhost:9093/spawn",
+                json={
+                    "agent_type": request.agent_type,
+                    "task": request.task,
+                    "parent_session": request.parent_session
+                },
+                timeout=10
+            ) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                return {"error": f"Failed to spawn agent: {resp.status}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.delete("/api/orchestrator/agents/{session_id}")
+async def destroy_agent(session_id: str):
+    """Destroy an agent session"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.delete(
+                f"http://localhost:9093/agents/{session_id}",
+                timeout=10
+            ) as resp:
+                if resp.status == 200:
+                    return {"status": "destroyed", "session_id": session_id}
+                return {"error": f"Failed to destroy agent: {resp.status}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.websocket("/ws/orchestrator")
+async def websocket_orchestrator(websocket: WebSocket):
+    """WebSocket endpoint for real-time orchestrator events"""
+    await websocket.accept()
+    
+    orchestrator_url = os.getenv("ORCHESTRATOR_WS_URL", "ws://localhost:9093")
+    
+    async def relay():
+        retry_delay = 1
+        while True:
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.ws_connect(orchestrator_url, heartbeat=15) as upstream:
+                        retry_delay = 1
+                        
+                        # Subscribe to all events
+                        await upstream.send_json({"type": "subscribe", "topic": "all"})
+                        
+                        async for msg in upstream:
+                            if msg.type == aiohttp.WSMsgType.TEXT:
+                                try:
+                                    data = json.loads(msg.data)
+                                    await websocket.send_json(data)
+                                except Exception:
+                                    pass
+                            elif msg.type == aiohttp.WSMsgType.ERROR:
+                                break
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"Orchestrator WS reconnect in {retry_delay}s: {e}")
+                await asyncio.sleep(min(retry_delay, 5))
+                retry_delay = min(retry_delay * 2, 10)
+    
+    relay_task = asyncio.create_task(relay())
+    
+    try:
+        # Also handle incoming messages from the web client
+        while True:
+            data = await websocket.receive_json()
+            # Forward queries to orchestrator
+            if data.get("type") == "query":
+                # Process via HTTP for now
+                pass
+    except WebSocketDisconnect:
+        relay_task.cancel()
+    except Exception as e:
+        if "close message" not in str(e).lower():
+            print(f"Orchestrator WebSocket error: {e}")
+        relay_task.cancel()
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8934, log_level="info")
-

@@ -59,7 +59,7 @@ A modern, glassmorphic web interface for managing **Hypr-Voice** and **Hypr-Whis
 - **Dark AMOLED Theme** (pure #000000 black)
 - **Purple accent** colors with glow effects
 - **Responsive layout** for desktop and mobile
-- **Real-time updates** via polling (WebSocket ready)
+- **Real-time updates** via WebSocket (context proxy on `/ws/context` → upstream `ws://localhost:9091` by default)
 - **Smooth animations** and transitions
 
 ## 🚀 Quick Start

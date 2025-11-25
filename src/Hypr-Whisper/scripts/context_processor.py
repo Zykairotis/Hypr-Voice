@@ -7,7 +7,6 @@ Runs independently to gather context data and provide it to the web UI.
 import asyncio
 import json
 import logging
-import os
 import signal
 import sys
 import time
@@ -35,6 +34,14 @@ class ContextProcessor:
         except ImportError:
             logger.error("Context manager not available")
             self.context_manager = None
+
+        # Window backend detector (backend-agnostic)
+        try:
+            from scripts.app_detector import ApplicationDetector
+            self.app_detector = ApplicationDetector()
+        except Exception as e:
+            logger.error(f"Application detector not available: {e}")
+            self.app_detector = None
 
         self.last_shell_update = 0
         self.last_clipboard_update = 0
@@ -115,18 +122,12 @@ class ContextProcessor:
             return
 
         try:
-            # Try to get window info from Hyprland
-            import subprocess
-            result = subprocess.run(
-                ['hyprctl', 'activewindow', '-j'],
-                capture_output=True,
-                text=True,
-                timeout=1
-            )
+            if self.app_detector:
+                window_info = self.app_detector.get_active_window()
+            else:
+                window_info = None
 
-            if result.returncode == 0:
-                window_info = json.loads(result.stdout)
-
+            if window_info:
                 # Save to disk for web UI
                 self._save_data('active_window.json', {
                     'window': window_info,
@@ -141,9 +142,9 @@ class ContextProcessor:
                     from vocabulary_manager import get_vocabulary_manager
                     vocab_manager = get_vocabulary_manager()
                     if vocab_manager:
-                        app_class = window_info.get('class', '')
-                        app_title = window_info.get('title', '')
-                        vocab_manager.update_vocabulary(app_class, app_title)
+                        app_class = window_info.get('class', '') or window_info.get('initialClass', '')
+                        app_title = window_info.get('title', '') or window_info.get('initialTitle', '')
+                        vocab_manager.update_vocabulary(app_class, app_title, backend=self.app_detector.backend.name)
                 except ImportError:
                     pass
         except Exception as e:
@@ -156,19 +157,7 @@ class ContextProcessor:
 
         try:
             # Get window info for context
-            window_info = None
-            try:
-                import subprocess
-                result = subprocess.run(
-                    ['hyprctl', 'activewindow', '-j'],
-                    capture_output=True,
-                    text=True,
-                    timeout=1
-                )
-                if result.returncode == 0:
-                    window_info = json.loads(result.stdout)
-            except:
-                pass
+            window_info = self.app_detector.get_active_window() if self.app_detector else None
 
             # Get comprehensive context
             context_data = self.context_manager.get_comprehensive_context(window_info)

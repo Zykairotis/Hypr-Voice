@@ -5,109 +5,37 @@ Detects active applications and updates vocabulary accordingly.
 """
 
 import asyncio
-import json
 import logging
-import subprocess
 import sys
 import time
 from pathlib import Path
 from typing import Optional, Dict, Set
 
-# Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
+
+# Local imports
 from vocabulary_manager import get_vocabulary_manager
+from window_backends import detect_backend
+import hook_bus
 
 logger = logging.getLogger(__name__)
 
 class ApplicationDetector:
     """Detects active applications for vocabulary switching."""
 
-    def __init__(self):
+    def __init__(self, preferred_backend: Optional[str] = None):
         self.vocabulary_manager = get_vocabulary_manager()
         self.current_window = None
-        self.detection_method = self._detect_detection_method()
-
-    def _detect_detection_method(self) -> str:
-        """Detect the available window system and detection method."""
-        # Try to detect the window system
-        try:
-            # Check for Hyprland using 'version' command
-            # Note: hyprctl --version returns exit code 1, so we check for 'version' command instead
-            result = subprocess.run(['hyprctl', 'version'],
-                                  capture_output=True, text=True, timeout=5)
-            # Check if output contains "Hyprland" (works even if returncode != 0)
-            if 'Hyprland' in result.stdout or 'Hyprland' in result.stderr:
-                logger.info("Detected Hyprland window system")
-                return "hyprland"
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            pass
-
-        try:
-            # Check for X11
-            result = subprocess.run(['xdotool', '--version'],
-                                  capture_output=True, text=True, timeout=5)
-            if result.returncode == 0:
-                logger.info("Detected X11 window system")
-                return "x11"
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            pass
-
-        logger.warning("No supported window system detected, using manual mode")
-        return "manual"
-
-    def get_active_window_hyprland(self) -> Optional[Dict]:
-        """Get active window information using Hyprland with full metadata."""
-        try:
-            # Get active window info as JSON with all details
-            result = subprocess.run(['hyprctl', 'activewindow', '-j'],
-                                  capture_output=True, text=True, timeout=5)
-            if result.returncode == 0:
-                data = json.loads(result.stdout)
-                # Return full Hyprland data for comprehensive context
-                return data
-        except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError) as e:
-            logger.error(f"Error getting Hyprland active window: {e}")
-        return None
-
-    def get_active_window_x11(self) -> Optional[Dict]:
-        """Get active window information using X11/xdotool."""
-        try:
-            # Get active window ID
-            result = subprocess.run(['xdotool', 'getactivewindow'],
-                                  capture_output=True, text=True, timeout=5)
-            if result.returncode != 0:
-                return None
-
-            window_id = result.stdout.strip()
-
-            # Get window class
-            result = subprocess.run(['xdotool', 'getwindowclassname', window_id],
-                                  capture_output=True, text=True, timeout=5)
-            window_class = result.stdout.strip() if result.returncode == 0 else ''
-
-            # Get window title
-            result = subprocess.run(['xdotool', 'getwindowname', window_id],
-                                  capture_output=True, text=True, timeout=5)
-            window_title = result.stdout.strip() if result.returncode == 0 else ''
-
-            return {
-                'class': window_class,
-                'title': window_title,
-                'initialClass': window_class,
-                'initialTitle': window_title
-            }
-
-        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-            logger.error(f"Error getting X11 active window: {e}")
-        return None
+        self.backend = detect_backend(preferred_backend)
+        self.detection_method = self.backend.name
+        hook_bus.emit('backend_change', backend_name=self.backend.name)
 
     def get_active_window(self) -> Optional[Dict]:
-        """Get active window information using available method."""
-        if self.detection_method == "hyprland":
-            return self.get_active_window_hyprland()
-        elif self.detection_method == "x11":
-            return self.get_active_window_x11()
-        else:
+        """Get active window information using the detected backend."""
+        try:
+            return self.backend.get_active_window()
+        except Exception as e:
+            logger.error(f"Error getting active window via backend {self.backend.name}: {e}")
             return None
 
     def detect_application_change(self) -> bool:
@@ -118,7 +46,7 @@ class ApplicationDetector:
             return False
 
         # Create a signature for the current window
-        window_signature = f"{window_info.get('class', '')}:{window_info.get('title', '')}"
+        window_signature = f"{window_info.get('backend', '')}:{window_info.get('class', '')}:{window_info.get('title', '')}"
 
         if window_signature != self.current_window:
             self.current_window = window_signature
@@ -139,8 +67,10 @@ class ApplicationDetector:
                         app_title = window_info.get('title', '') or window_info.get('initialTitle', '')
                         logger.info(f"Application changed to: {app_class} - {app_title}")
 
-                        # Update vocabulary based on new application
-                        self.vocabulary_manager.update_vocabulary(app_class, app_title)
+                        # Update vocabulary based on new application and backend
+                        self.vocabulary_manager.update_vocabulary(app_class, app_title, backend=self.backend.name)
+                        # Emit hook for window change
+                        hook_bus.emit('window_change', window_info=window_info)
 
                 await asyncio.sleep(interval)
 
