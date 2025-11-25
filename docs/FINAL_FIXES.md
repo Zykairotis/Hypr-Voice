@@ -104,10 +104,10 @@ Testing: deepgram
 
 From your `.env`:
 ```bash
-✅ DEEPGRAM_API_KEY=a925e4f8...
-✅ ELEVENLABS_API_KEY=sk_b59e3b9...
-✅ GEMINI_API_KEY=AIzaSyBZ...  (not used in TTS yet)
-✅ CFS_API_KEY=I+FeeseBW...    (for image gen)
+✅ DEEPGRAM_API_KEY=<redacted>
+✅ ELEVENLABS_API_KEY=<redacted>
+✅ GEMINI_API_KEY=<redacted>  (not used in TTS yet)
+✅ CFS_API_KEY=<redacted>    (for image gen)
 ```
 
 ## Next Test Will Show:

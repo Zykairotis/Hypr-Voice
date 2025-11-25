@@ -83,10 +83,10 @@ Testing: deepgram
 
 From your `.env`:
 ```bash
-✅ DEEPGRAM_API_KEY=a925e4f8... (loaded)
-✅ ELEVENLABS_API_KEY=sk_b59e3b9... (loaded)
-✅ GEMINI_API_KEY=AIzaSyBZ... (for future use)
-✅ CFS_API_KEY=I+FeeseBW... (for image generation)
+✅ DEEPGRAM_API_KEY=<redacted> (loaded)
+✅ ELEVENLABS_API_KEY=<redacted> (loaded)
+✅ GEMINI_API_KEY=<redacted> (for future use)
+✅ CFS_API_KEY=<redacted> (for image generation)
 ```
 
 ## Next Steps
