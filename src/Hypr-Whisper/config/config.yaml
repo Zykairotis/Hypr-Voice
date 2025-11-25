@@ -36,6 +36,10 @@ hypr_voice:
   min_speech_duration: 0.3  # seconds
   max_silence_duration: 1.5  # seconds
 
+# Disable vocabulary-driven TCPGen corrections for now to avoid over-aggressive
+# substitutions (e.g., "system" -> "systemd" or "look" -> "ok").
+tcpgen_enabled: false
+
 # Audio Settings for Hyprland
 audio:
   input_device: "GA102 High Definition Audio Controller Digital Stereo (HDMI)"  # GPU HDMI audio input
