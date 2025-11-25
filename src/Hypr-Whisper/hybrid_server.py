@@ -312,15 +312,6 @@ def filter_hallucinations(text):
     if not text:
         return ""
     
-    # Common hallucination patterns from YouTube training data
-    hallucination_patterns = [
-        # Word-boundary anchored so we don't strip substrings inside real words (e.g., "look" -> "lo")
-        r'\b(thank you|thanks|okay|ok|bye|goodbye|subscribe|like|comment|share|bell|notification|video|channel)\b\s*[.!?]*\s*',
-        r'(music|applause|\[.*?\]|\(.*?\))',  # Sound annotations
-        r'(\b\w+\b)(\s+\1){2,}',  # Word repeated 3+ times
-        r'(\.{3,}|!{2,}|\?{2,})',  # Multiple punctuation
-    ]
-    
     # Remove repeated phrases
     words = text.split()
     cleaned_words = []
@@ -336,10 +327,6 @@ def filter_hallucinations(text):
         cleaned_words.append(word)
     
     text = ' '.join(cleaned_words)
-    
-    # Remove hallucination patterns (case-insensitive)
-    for pattern in hallucination_patterns:
-        text = re.sub(pattern, ' ', text, flags=re.IGNORECASE)
     
     # Clean up spacing
     text = re.sub(r'\s+', ' ', text).strip()
