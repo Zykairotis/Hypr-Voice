@@ -314,7 +314,8 @@ def filter_hallucinations(text):
     
     # Common hallucination patterns from YouTube training data
     hallucination_patterns = [
-        r'(thank you|thanks|okay|ok|bye|goodbye|subscribe|like|comment|share|bell|notification|video|channel)\s*[.!?]*\s*',
+        # Word-boundary anchored so we don't strip substrings inside real words (e.g., "look" -> "lo")
+        r'\b(thank you|thanks|okay|ok|bye|goodbye|subscribe|like|comment|share|bell|notification|video|channel)\b\s*[.!?]*\s*',
         r'(music|applause|\[.*?\]|\(.*?\))',  # Sound annotations
         r'(\b\w+\b)(\s+\1){2,}',  # Word repeated 3+ times
         r'(\.{3,}|!{2,}|\?{2,})',  # Multiple punctuation
