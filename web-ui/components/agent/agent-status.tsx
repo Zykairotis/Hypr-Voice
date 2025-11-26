@@ -3,12 +3,10 @@
 import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Activity } from "lucide-react";
+import { endpoints } from "@/lib/endpoints";
 
-// Configurable agent endpoints - now points to orchestrator
-const AGENT_HOST = "localhost";
-const AGENT_PORT = 9093;
-const AGENT_API_URL = `http://${AGENT_HOST}:${AGENT_PORT}`;
-const AGENT_WEBSOCKET_URL = `ws://${AGENT_HOST}:${AGENT_PORT}/ws`;
+const AGENT_API_URL = endpoints.api.orchestratorStatus;
+const AGENT_WEBSOCKET_URL = endpoints.ws.orchestrator;
 
 interface AgentStats {
   status: "online" | "offline" | "error";
@@ -27,7 +25,7 @@ export default function AgentStatus() {
 
   const fetchStatus = async () => {
     try {
-      const response = await fetch(`${AGENT_API_URL}/health`, {
+      const response = await fetch(AGENT_API_URL, {
         signal: AbortSignal.timeout(3000),
       });
       if (response.ok) {
@@ -77,4 +75,3 @@ export default function AgentStatus() {
     </div>
   );
 }
-

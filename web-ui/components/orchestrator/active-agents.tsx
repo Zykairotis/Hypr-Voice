@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Trash2, RefreshCw, Clock, Bot, Loader2 } from "lucide-react";
+import { Trash2, RefreshCw, Clock, Bot, Loader2, Zap, Users } from "lucide-react";
 import { toast } from "sonner";
+import { endpoints } from "@/lib/endpoints";
+import { useOrchestratorWebSocket, OrchestratorEvent } from "@/lib/orchestrator-websocket";
 
 interface AgentSession {
   session_id: string;
@@ -14,22 +16,19 @@ interface AgentSession {
   query: string;
   created_at: string;
   updated_at: string;
+  parent_session?: string;
+  children?: string[];
 }
 
 export default function ActiveAgents() {
   const [agents, setAgents] = useState<AgentSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [destroying, setDestroying] = useState<string | null>(null);
+  const { isConnected, subscribe } = useOrchestratorWebSocket();
 
-  useEffect(() => {
-    fetchAgents();
-    const interval = setInterval(fetchAgents, 5000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const fetchAgents = async () => {
+  const fetchAgents = useCallback(async () => {
     try {
-      const response = await fetch("http://localhost:8934/api/orchestrator/agents");
+      const response = await fetch(endpoints.direct.agents);
       if (response.ok) {
         const data = await response.json();
         setAgents(data.agents || []);
@@ -39,17 +38,54 @@ export default function ActiveAgents() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchAgents();
+    const interval = setInterval(fetchAgents, isConnected ? 10000 : 3000);
+    return () => clearInterval(interval);
+  }, [fetchAgents, isConnected]);
+
+  useEffect(() => {
+    const unsubCreated = subscribe("agent_created", (event: OrchestratorEvent) => {
+      if (event.data) {
+        setAgents(prev => [...prev, event.data]);
+        toast.success(`Agent ${event.data.agent_type} spawned`);
+      }
+    });
+
+    const unsubCompleted = subscribe("agent_completed", (event: OrchestratorEvent) => {
+      if (event.data?.session_id) {
+        setAgents(prev => prev.map(a => 
+          a.session_id === event.data.session_id 
+            ? { ...a, status: "completed" } 
+            : a
+        ));
+      }
+    });
+
+    const unsubDestroyed = subscribe("agent_destroyed", (event: OrchestratorEvent) => {
+      if (event.data?.session_id) {
+        setAgents(prev => prev.filter(a => a.session_id !== event.data.session_id));
+      }
+    });
+
+    return () => {
+      unsubCreated();
+      unsubCompleted();
+      unsubDestroyed();
+    };
+  }, [subscribe]);
 
   const destroyAgent = async (sessionId: string) => {
     setDestroying(sessionId);
     try {
-      const response = await fetch(`http://localhost:8934/api/orchestrator/agents/${sessionId}`, {
+      const response = await fetch(`${endpoints.orchestrator}/agents/${sessionId}`, {
         method: "DELETE",
       });
       if (response.ok) {
-        toast.success("Agent destroyed successfully");
-        fetchAgents();
+        toast.success("Agent destroyed");
+        setAgents(prev => prev.filter(a => a.session_id !== sessionId));
       } else {
         toast.error("Failed to destroy agent");
       }
@@ -83,14 +119,13 @@ export default function ActiveAgents() {
 
   if (agents.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-center">
-        <div className="w-16 h-16 rounded-full bg-violet-500/10 flex items-center justify-center mb-4">
-          <Bot className="w-8 h-8 text-violet-400" />
+      <div className="flex flex-col items-center justify-center py-8 sm:py-12 text-center">
+        <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-violet-500/10 flex items-center justify-center mb-4">
+          <Bot className="w-6 h-6 sm:w-8 sm:h-8 text-violet-400" />
         </div>
-        <h3 className="text-lg font-medium text-white/80 mb-2">No Active Agents</h3>
-        <p className="text-sm text-white/50 max-w-md">
-          Agent sessions will appear here when you send queries to the orchestrator.
-          Use the Query Interface above or press F10 for voice input.
+        <h3 className="text-base sm:text-lg font-medium text-white/80 mb-2">No Active Agents</h3>
+        <p className="text-xs sm:text-sm text-white/50 max-w-md px-4">
+          Agent sessions will appear here when you send queries.
         </p>
         <Button
           variant="outline"
@@ -107,8 +142,16 @@ export default function ActiveAgents() {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between mb-4">
-        <span className="text-sm text-white/60">{agents.length} active session(s)</span>
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <div className="flex items-center gap-2">
+          <span className="text-xs sm:text-sm text-white/60">{agents.length} session(s)</span>
+          {isConnected && (
+            <Badge variant="outline" className="bg-green-500/10 text-green-400 border-green-500/30 text-xs">
+              <Zap className="w-3 h-3 mr-1" />
+              Live
+            </Badge>
+          )}
+        </div>
         <Button variant="ghost" size="sm" onClick={fetchAgents}>
           <RefreshCw className="w-4 h-4" />
         </Button>

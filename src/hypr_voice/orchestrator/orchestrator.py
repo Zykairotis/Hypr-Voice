@@ -13,6 +13,7 @@ from datetime import datetime
 import uuid
 
 from .router import QueryRouter, RouteDecision
+from .cerebras_router import CerebrasRouter
 from .context_manager import ContextManager
 from .registry import AgentRegistry, AgentSession
 
@@ -78,9 +79,19 @@ class HyprVoiceOrchestrator:
     - Implements agents parameter for programmatic subagent definitions
     """
     
-    def __init__(self, config: Optional[OrchestratorConfig] = None):
+    def __init__(self, config: Optional[OrchestratorConfig] = None, use_cerebras_router: bool = True):
         self.config = config or OrchestratorConfig()
-        self.router = QueryRouter()
+        
+        # Use Cerebras for intelligent routing, fallback to keyword matching
+        if use_cerebras_router:
+            self.router = CerebrasRouter()
+            self.keyword_router = QueryRouter()  # Keep as fallback
+            logger.info("Using Cerebras-powered intelligent router")
+        else:
+            self.router = QueryRouter()
+            self.keyword_router = None
+            logger.info("Using keyword-based router")
+        
         self.context_manager = ContextManager()
         self.registry = AgentRegistry()
         self.session_id = str(uuid.uuid4())
@@ -149,6 +160,26 @@ Your capabilities:
 
 Focus on clear, natural-sounding output.""",
                 "tools": ["Read"],
+                "model": "haiku"
+            },
+            "general-conversation": {
+                "description": "General conversation and casual chat. Use for everyday questions, life advice, friendly discussion, greetings.",
+                "prompt": """You are a friendly, helpful conversational assistant with a warm personality.
+
+Your capabilities:
+- Engage in natural, warm conversation
+- Provide thoughtful life advice and perspective
+- Answer general knowledge questions
+- Be empathetic and supportive
+- Have casual, friendly discussions
+
+Guidelines for voice output:
+- Keep responses conversational and natural
+- Aim for spoken-friendly length (2-4 sentences typically)
+- Avoid bullet points or lists - use flowing prose
+- Be concise but meaningful
+- Sound like a helpful friend, not a robot""",
+                "tools": [],
                 "model": "haiku"
             },
         }
@@ -242,7 +273,7 @@ Focus on clear, natural-sounding output.""",
                     query=query,
                 )
                 
-                await client.query(query)
+                await client.query(query, session_id=session_id)
                 
                 async for message in client.receive_response():
                     if isinstance(message, AssistantMessage):
@@ -304,12 +335,24 @@ Focus on clear, natural-sounding output.""",
         # Use direct Anthropic API as fallback
         try:
             import anthropic
+            import os
             
-            client = anthropic.Anthropic()
+            # Support custom Anthropic configuration from environment
+            api_key = os.getenv("ANTHROPIC_AUTH_TOKEN") or os.getenv("ANTHROPIC_API_KEY")
+            base_url = os.getenv("ANTHROPIC_BASE_URL")
+            model = os.getenv("ANTHROPIC_DEFAULT_SONNET_MODEL") or self.config.model
+            
+            client_kwargs = {}
+            if api_key:
+                client_kwargs["api_key"] = api_key
+            if base_url:
+                client_kwargs["base_url"] = base_url
+            
+            client = anthropic.Anthropic(**client_kwargs)
             agent_config = self.agent_definitions.get(route.agent_type, {})
             
             response = client.messages.create(
-                model=self.config.model,
+                model=model,
                 max_tokens=4096,
                 system=agent_config.get("prompt", "You are a helpful assistant."),
                 messages=[{"role": "user", "content": query}],
@@ -338,6 +381,123 @@ Focus on clear, natural-sounding output.""",
                 "error": str(e),
                 "agent": route.agent_type,
             }
+    
+    async def _process_fallback_streaming(
+        self, 
+        query: str, 
+        route: RouteDecision, 
+        session_id: str
+    ) -> AsyncIterator[dict]:
+        """
+        Streaming fallback processing - yields individual tokens as they arrive.
+        
+        This enables real-time TTS where audio can begin playing before
+        the full response is generated.
+        """
+        yield {
+            "type": "info",
+            "content": f"Processing with {route.agent_type} (streaming mode)",
+        }
+        
+        try:
+            import anthropic
+            import os
+            
+            # Support custom Anthropic configuration from environment
+            api_key = os.getenv("ANTHROPIC_AUTH_TOKEN") or os.getenv("ANTHROPIC_API_KEY")
+            base_url = os.getenv("ANTHROPIC_BASE_URL")
+            model = os.getenv("ANTHROPIC_DEFAULT_SONNET_MODEL") or self.config.model
+            
+            client_kwargs = {}
+            if api_key:
+                client_kwargs["api_key"] = api_key
+            if base_url:
+                client_kwargs["base_url"] = base_url
+            
+            client = anthropic.Anthropic(**client_kwargs)
+            agent_config = self.agent_definitions.get(route.agent_type, {})
+            
+            full_response = ""
+            
+            # Use streaming API
+            with client.messages.stream(
+                model=model,
+                max_tokens=4096,
+                system=agent_config.get("prompt", "You are a helpful assistant."),
+                messages=[{"role": "user", "content": query}],
+            ) as stream:
+                for text in stream.text_stream:
+                    if text:
+                        full_response += text
+                        yield {
+                            "type": "token",
+                            "content": text,
+                            "agent": route.agent_type,
+                        }
+            
+            # Final complete text for reference
+            yield {
+                "type": "text",
+                "content": full_response,
+                "agent": route.agent_type,
+            }
+            
+            yield {
+                "type": "result",
+                "content": "Completed",
+                "session_id": session_id,
+                "cost_usd": None,
+                "turns": 1,
+            }
+            
+        except Exception as e:
+            logger.error(f"Streaming fallback error: {e}")
+            yield {
+                "type": "error",
+                "error": str(e),
+                "agent": route.agent_type,
+            }
+    
+    async def process_streaming(
+        self, 
+        query: str, 
+        context: Optional[dict] = None
+    ) -> AsyncIterator[dict]:
+        """
+        Process query with token-level streaming for real-time TTS.
+        
+        Yields individual tokens as they arrive from the LLM,
+        enabling audio playback to begin immediately.
+        
+        Args:
+            query: User query
+            context: Optional context dictionary
+            
+        Yields:
+            Streaming events including 'token' events for each chunk
+        """
+        # Route the query first
+        route = self.router.route(query)
+        
+        # Create session with route info
+        session = self.registry.create_session(route.agent_type, query[:100])
+        session_id = session.session_id
+        
+        yield {
+            "type": "route",
+            "agent_type": route.agent_type,
+            "confidence": route.confidence,
+            "reasoning": route.reasoning,
+        }
+        
+        # Update status
+        self.registry.update_session(session_id, {"status": "streaming"})
+        
+        # Process with streaming
+        async for event in self._process_fallback_streaming(query, route, session_id):
+            yield event
+        
+        self.registry.update_session(session_id, {"status": "completed"})
     
     async def spawn_agent(
         self, 

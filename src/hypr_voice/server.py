@@ -11,12 +11,15 @@ import os
 from contextlib import asynccontextmanager
 from datetime import datetime
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List
+import tempfile
+import json
 
-from .orchestrator import HyprVoiceOrchestrator, OrchestratorConfig
+from .orchestrator import HyprVoiceOrchestrator, OrchestratorConfig, VoiceOrchestrator, VoiceOrchestratorConfig
 from .agents import get_all_agents
 from .ipc import OrchestratorWebSocket
 
@@ -27,8 +30,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Global orchestrator instance
+# Global orchestrator instances
 orchestrator: Optional[HyprVoiceOrchestrator] = None
+voice_orchestrator: Optional[VoiceOrchestrator] = None
 ws_server: Optional[OrchestratorWebSocket] = None
 
 
@@ -44,10 +48,21 @@ class SpawnRequest(BaseModel):
     parent_session: Optional[str] = None
 
 
+class VoiceProcessRequest(BaseModel):
+    text: str
+    conversation_id: Optional[str] = None
+    speak_response: bool = True
+
+
+class TTSSpeakRequest(BaseModel):
+    text: str
+    voice: Optional[str] = None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
-    global orchestrator, ws_server
+    global orchestrator, voice_orchestrator, ws_server
     
     # Startup
     logger.info("Starting Hypr-Voice Orchestrator...")
@@ -60,9 +75,14 @@ async def lifespan(app: FastAPI):
     
     orchestrator = HyprVoiceOrchestrator(config)
     
-    # Start WebSocket server (if not using uvicorn WebSocket)
-    # ws_server = OrchestratorWebSocket(port=9091)
-    # await ws_server.start()
+    # Initialize voice orchestrator with TTS
+    voice_config = VoiceOrchestratorConfig(
+        tts_provider=os.getenv("HYPR_VOICE_TTS_PROVIDER", "deepgram"),
+        tts_voice=os.getenv("HYPR_VOICE_TTS_VOICE", "aura-luna-en"),  # Deepgram Aura voice
+        whisper_url=os.getenv("WHISPER_URL", "http://localhost:9099"),
+        save_to_file=True,
+    )
+    voice_orchestrator = VoiceOrchestrator(voice_config)
     
     logger.info("Orchestrator started successfully")
     
@@ -72,6 +92,8 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down orchestrator...")
     if orchestrator:
         await orchestrator.shutdown()
+    if voice_orchestrator:
+        await voice_orchestrator.shutdown()
     if ws_server:
         await ws_server.stop()
     logger.info("Shutdown complete")
@@ -177,6 +199,178 @@ async def destroy_agent(session_id: str):
         return {"status": "destroyed", "session_id": session_id}
     else:
         raise HTTPException(status_code=404, detail="Session not found")
+
+
+# ============================================================================
+# VOICE ENDPOINTS
+# ============================================================================
+
+@app.post("/voice/process")
+async def voice_process(request: VoiceProcessRequest):
+    """
+    Process text through the voice pipeline.
+    Routes to appropriate agent, generates response, and speaks via TTS.
+    """
+    if not voice_orchestrator:
+        raise HTTPException(status_code=503, detail="Voice orchestrator not initialized")
+    
+    result = await voice_orchestrator.quick_response(
+        request.text, 
+        speak=request.speak_response
+    )
+    
+    return result
+
+
+@app.post("/voice/process/stream")
+async def voice_process_stream(request: VoiceProcessRequest):
+    """
+    Stream process text through the voice pipeline.
+    Returns Server-Sent Events with progress updates.
+    """
+    if not voice_orchestrator:
+        raise HTTPException(status_code=503, detail="Voice orchestrator not initialized")
+    
+    async def event_generator():
+        async for chunk in voice_orchestrator.process_text(
+            request.text,
+            request.conversation_id,
+            request.speak_response
+        ):
+            yield f"data: {json.dumps(chunk)}\n\n"
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream"
+    )
+
+
+class StreamingTTSRequest(BaseModel):
+    """Request for streaming TTS processing."""
+    text: str
+    conversation_id: Optional[str] = None
+    auto_play: bool = False  # Server-side audio playback (usually False for API)
+
+
+@app.post("/voice/process/streaming")
+async def voice_process_streaming(request: StreamingTTSRequest):
+    """
+    Process text with real-time streaming TTS via WebSocket.
+    
+    Audio playback begins as soon as the first LLM tokens arrive,
+    providing near-instant voice response (<500ms to first audio).
+    
+    Returns Server-Sent Events (SSE) with:
+    - token: Individual LLM tokens as they arrive
+    - first_token: Time to first token metric
+    - routing: Agent routing decision
+    - tts_connected: TTS WebSocket status
+    - complete: Final response with metrics
+    """
+    if not voice_orchestrator:
+        raise HTTPException(status_code=503, detail="Voice orchestrator not initialized")
+    
+    async def event_generator():
+        async for event in voice_orchestrator.process_text_streaming(
+            request.text,
+            request.conversation_id,
+            auto_play=request.auto_play
+        ):
+            yield f"data: {json.dumps(event)}\n\n"
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
+
+
+@app.post("/voice/transcribe")
+async def voice_transcribe(file: UploadFile = File(...)):
+    """
+    Transcribe an audio file using Whisper.
+    """
+    if not voice_orchestrator:
+        raise HTTPException(status_code=503, detail="Voice orchestrator not initialized")
+    
+    # Save uploaded file temporarily
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+        content = await file.read()
+        tmp.write(content)
+        tmp_path = tmp.name
+    
+    try:
+        text = await voice_orchestrator.transcribe(tmp_path)
+        return {"text": text, "success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        # Cleanup temp file
+        import os
+        os.unlink(tmp_path)
+
+
+@app.post("/voice/speak")
+async def voice_speak(request: TTSSpeakRequest):
+    """
+    Convert text to speech using Deepgram TTS.
+    Returns audio file path or streams audio.
+    """
+    if not voice_orchestrator:
+        raise HTTPException(status_code=503, detail="Voice orchestrator not initialized")
+    
+    result = await voice_orchestrator.speak(request.text)
+    
+    if result.get("success") and result.get("audio_file"):
+        # Return the audio file with proper headers for inline playback
+        return FileResponse(
+            result["audio_file"],
+            media_type="audio/wav",
+            filename="response.wav",
+            headers={
+                "Content-Disposition": "inline; filename=\"response.wav\"",
+                "Content-Type": "audio/wav",
+                "Accept-Ranges": "bytes"
+            }
+        )
+    
+    return result
+
+
+@app.get("/voice/conversations")
+async def list_conversations():
+    """List all conversations."""
+    if not voice_orchestrator:
+        raise HTTPException(status_code=503, detail="Voice orchestrator not initialized")
+    
+    return {"conversations": voice_orchestrator.list_conversations()}
+
+
+@app.get("/voice/conversations/{conversation_id}")
+async def get_conversation(conversation_id: str):
+    """Get a specific conversation."""
+    if not voice_orchestrator:
+        raise HTTPException(status_code=503, detail="Voice orchestrator not initialized")
+    
+    conv = voice_orchestrator.get_conversation(conversation_id)
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    
+    return conv.to_dict()
+
+
+@app.post("/voice/conversations")
+async def create_conversation():
+    """Create a new conversation."""
+    if not voice_orchestrator:
+        raise HTTPException(status_code=503, detail="Voice orchestrator not initialized")
+    
+    conv = voice_orchestrator.create_conversation()
+    return conv.to_dict()
 
 
 @app.websocket("/ws")

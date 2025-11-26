@@ -286,3 +286,100 @@ class AgentRegistry:
                 "by_type": type_counts,
                 "history_count": len(self._session_history),
             }
+    
+    def get_sessions_by_type(self, agent_type: str, active_only: bool = True) -> list[AgentSession]:
+        """
+        Get all sessions of a specific agent type.
+        
+        Supports multiple instances of the same agent type running concurrently.
+        
+        Args:
+            agent_type: Type of agent to filter
+            active_only: If True, only return running/created sessions
+            
+        Returns:
+            List of AgentSession objects
+        """
+        with self._lock:
+            sessions = [
+                s for s in self._sessions.values()
+                if s.agent_type == agent_type
+            ]
+            
+            if active_only:
+                sessions = [
+                    s for s in sessions
+                    if s.status in (AgentStatus.CREATED, AgentStatus.RUNNING, AgentStatus.PAUSED)
+                ]
+            
+            return sessions
+    
+    def spawn_child(
+        self,
+        parent_id: str,
+        agent_type: str,
+        query: str,
+        metadata: dict = None,
+    ) -> AgentSession:
+        """
+        Spawn a child sub-agent from a parent session.
+        
+        This allows the orchestrator to delegate tasks to specialized
+        sub-agents and track the parent-child relationship.
+        
+        Args:
+            parent_id: Parent session ID
+            agent_type: Type of child agent to spawn
+            query: Task/query for the child agent
+            metadata: Optional metadata for the child
+            
+        Returns:
+            Created child AgentSession
+            
+        Raises:
+            ValueError: If parent session not found
+        """
+        with self._lock:
+            parent = self._sessions.get(parent_id)
+            if not parent:
+                raise ValueError(f"Parent session {parent_id} not found")
+            
+            child_metadata = metadata or {}
+            child_metadata["spawned_from"] = parent_id
+            child_metadata["parent_agent_type"] = parent.agent_type
+            
+            child = self.create_session(
+                agent_type=agent_type,
+                query=query,
+                parent_id=parent_id,
+                metadata=child_metadata,
+            )
+            
+            logger.info(f"Spawned child {child.session_id[:8]} ({agent_type}) from parent {parent_id[:8]}")
+            
+            return child
+    
+    def get_instance_count(self, agent_type: str) -> int:
+        """
+        Get count of active instances for an agent type.
+        
+        Args:
+            agent_type: Type of agent
+            
+        Returns:
+            Number of active instances
+        """
+        return len(self.get_sessions_by_type(agent_type, active_only=True))
+    
+    def can_spawn_more(self, agent_type: str, max_per_type: int = 10) -> bool:
+        """
+        Check if more instances of an agent type can be spawned.
+        
+        Args:
+            agent_type: Type of agent
+            max_per_type: Maximum allowed instances per type
+            
+        Returns:
+            True if more can be spawned
+        """
+        return self.get_instance_count(agent_type) < max_per_type

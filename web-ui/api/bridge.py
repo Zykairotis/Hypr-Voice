@@ -34,6 +34,7 @@ app.add_middleware(
 BASE_DIR = Path(__file__).parent.parent.parent
 WHISPER_CONFIG_DIR = BASE_DIR / "src/Hypr-Whisper/config"
 AGENT_CONFIG_DIR = BASE_DIR / "config/hypr_voice"
+ORCHESTRATOR_URL = os.getenv("ORCHESTRATOR_URL", "http://localhost:9093")
 
 # Pydantic models for request/response
 class AudioConfig(BaseModel):
@@ -721,6 +722,84 @@ async def orchestrator_query(request: OrchestratorQuery):
                 if resp.status == 200:
                     return await resp.json()
                 return {"error": f"Orchestrator returned status {resp.status}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ============================================================================
+# VOICE / TTS PROXY ENDPOINTS
+# ============================================================================
+
+
+@app.get("/api/voice/conversations")
+async def get_voice_conversations():
+    """List conversations from the voice orchestrator."""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{ORCHESTRATOR_URL}/voice/conversations", timeout=10) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                return {"conversations": [], "error": f"voice orchestrator returned {resp.status}"}
+    except Exception as e:
+        return {"conversations": [], "error": str(e)}
+
+
+@app.post("/api/voice/conversations")
+async def create_voice_conversation():
+    """Create a new conversation via the voice orchestrator."""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(f"{ORCHESTRATOR_URL}/voice/conversations", timeout=10) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                return {"error": f"failed to create conversation: {resp.status}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/voice/conversations/{conversation_id}")
+async def get_voice_conversation(conversation_id: str):
+    """Get a specific conversation."""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{ORCHESTRATOR_URL}/voice/conversations/{conversation_id}", timeout=10) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                return {"error": f"conversation fetch failed: {resp.status}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.post("/api/voice/process")
+async def process_voice(request: Dict[str, Any]):
+    """Process text through the voice orchestrator (chat + TTS)."""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{ORCHESTRATOR_URL}/voice/process",
+                json=request,
+                timeout=60
+            ) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                return {"error": f"voice process failed: {resp.status}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.post("/api/voice/speak")
+async def speak_voice(request: Dict[str, Any]):
+    """Speak text via the voice orchestrator."""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{ORCHESTRATOR_URL}/voice/speak",
+                json=request,
+                timeout=30
+            ) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                return {"error": f"voice speak failed: {resp.status}"}
     except Exception as e:
         return {"error": str(e)}
 

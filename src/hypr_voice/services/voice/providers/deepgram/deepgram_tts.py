@@ -19,24 +19,18 @@ logger = logging.getLogger(__name__)
 class DeepgramTTS:
     """Simple Deepgram TTS implementation using REST API with streaming support"""
     
-    # Voice mapping for beta API (working model from your example)
-    BETA_VOICE_MAP = {
-        "aura-luna-en": "alpha-stella-en-v2",    # Use working model for all
-        "aura-athena-en": "alpha-stella-en-v2", 
-        "aura-asteria-en": "alpha-stella-en-v2",
-        "aura-apollo-en": "alpha-stella-en-v2",
-        "aura-atlas-en": "alpha-stella-en-v2",
-        "aura-hermes-en": "alpha-stella-en-v2",
-        "aura-aurora-en": "alpha-stella-en-v2",
-        "aura-hera-en": "alpha-stella-en-v2"
+    # Valid Deepgram Aura voices (use directly, no mapping needed)
+    VALID_VOICES = {
+        "aura-asteria-en", "aura-luna-en", "aura-stella-en", "aura-athena-en",
+        "aura-hera-en", "aura-orion-en", "aura-arcas-en", "aura-perseus-en",
+        "aura-angus-en", "aura-orpheus-en", "aura-helios-en", "aura-zeus-en"
     }
     
     def __init__(self, config):
         self.config = config
         self.api_key = config.deepgram_api_key
-        # Try beta endpoint first (works with older keys), fallback to production
-        self.api_url = "https://api.beta.deepgram.com/v1/speak"
-        self.use_beta = True
+        # Use production API endpoint
+        self.api_url = "https://api.deepgram.com/v1/speak"
         
     async def generate(self, text: str, voice: str, model: Optional[str] = None,
                       speed: float = 1.0, pitch: float = 0.0, volume: float = 1.0,
@@ -57,6 +51,8 @@ class DeepgramTTS:
         Returns:
             Dictionary with audio_data and metadata
         """
+        logger.info(f"[DeepgramTTS.generate] text_len={len(text)}, voice={voice}, streaming={use_streaming}, auto_play={auto_play}")
+        logger.info(f"[DeepgramTTS.generate] API key present: {bool(self.api_key)}")
         if use_streaming and auto_play:
             return await self._generate_streaming(text, voice)
         else:
@@ -64,11 +60,10 @@ class DeepgramTTS:
     
     async def _generate_streaming(self, text: str, voice: str) -> Dict[str, Any]:
         """Generate with HTTP streaming and real-time playback"""
-        # Map voice name if using beta API
-        if self.use_beta and voice in self.BETA_VOICE_MAP:
-            model_name = self.BETA_VOICE_MAP[voice]
-        else:
-            model_name = voice
+        logger.info(f"[DeepgramTTS._generate_streaming] Starting - voice={voice}, text_len={len(text)}")
+        # Use voice directly (validated voices work as model names)
+        model_name = voice if voice in self.VALID_VOICES else "aura-asteria-en"
+        logger.info(f"[DeepgramTTS._generate_streaming] Using model: {model_name}")
             
         # Build query parameters
         params = {
@@ -88,7 +83,7 @@ class DeepgramTTS:
         # Just send text in payload (model is in URL params)
         data = {"text": text}
         
-        logger.info(f"Streaming TTS from Deepgram...")
+        logger.info(f"[DeepgramTTS._generate_streaming] Calling Deepgram API: {url}")
         
         audio_chunks = []
         player_process = None
@@ -112,15 +107,16 @@ class DeepgramTTS:
                         "-"
                     ]
                     try:
+                        logger.info("[DeepgramTTS._generate_streaming] Starting ffplay for audio playback...")
                         player_process = subprocess.Popen(
                             player_command,
                             stdin=subprocess.PIPE,
                             stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL
+                            stderr=subprocess.PIPE  # Capture stderr for debugging
                         )
-                        logger.debug("Started ffplay for streaming playback")
+                        logger.info(f"[DeepgramTTS._generate_streaming] ffplay started with PID: {player_process.pid}")
                     except FileNotFoundError:
-                        logger.warning("ffplay not found, collecting audio without playback")
+                        logger.error("[DeepgramTTS._generate_streaming] ffplay not found! Install ffmpeg for audio playback")
                     
                     # Stream audio chunks
                     chunk_count = 0
@@ -158,7 +154,18 @@ class DeepgramTTS:
                     
                     # Combine audio data
                     audio_data = b''.join(audio_chunks)
-                    logger.info(f"Received total {len(audio_data)} bytes")
+                    logger.info(f"[DeepgramTTS._generate_streaming] Received total {len(audio_data)} bytes in {chunk_count} chunks")
+                    
+                    # Check for ffplay errors
+                    if player_process and player_process.stderr:
+                        try:
+                            stderr_output = player_process.stderr.read()
+                            if stderr_output:
+                                logger.warning(f"[DeepgramTTS._generate_streaming] ffplay stderr: {stderr_output.decode()}")
+                        except:
+                            pass
+                    
+                    logger.info(f"[DeepgramTTS._generate_streaming] Playback complete")
                     
                     return {
                         "audio_data": audio_data,
@@ -168,18 +175,17 @@ class DeepgramTTS:
                     }
                     
         except Exception as e:
-            logger.error(f"Streaming TTS failed: {e}")
+            logger.error(f"[DeepgramTTS._generate_streaming] FAILED: {e}", exc_info=True)
             if player_process:
                 player_process.kill()
             raise
     
     async def _generate_non_streaming(self, text: str, voice: str) -> Dict[str, Any]:
         """Generate without streaming (wait for full audio)"""
-        # Map voice name if using beta API
-        if self.use_beta and voice in self.BETA_VOICE_MAP:
-            model_name = self.BETA_VOICE_MAP[voice]
-        else:
-            model_name = voice
+        logger.info(f"[DeepgramTTS._generate_non_streaming] Starting - voice={voice}, text_len={len(text)}")
+        # Use voice directly (validated voices work as model names)
+        model_name = voice if voice in self.VALID_VOICES else "aura-asteria-en"
+        logger.info(f"[DeepgramTTS._generate_non_streaming] Using model: {model_name}")
             
         params = {
             "model": model_name,
@@ -193,16 +199,18 @@ class DeepgramTTS:
         headers = {
             "Authorization": f"Token {self.api_key}",
             "Content-Type": "application/json",
-            "Accept": "audio/*"
+            "Accept": "audio/*",
+            "Accept-Encoding": "identity",  # Disable compression to avoid encoding issues
         }
         
         # Just send text in payload (model is in URL params)
         data = {"text": text}
         
-        logger.debug(f"Making REST API request to Deepgram TTS: {url}")
+        logger.info(f"[DeepgramTTS._generate_non_streaming] Calling Deepgram API: {url}")
         
         try:
-            async with aiohttp.ClientSession() as session:
+            # Disable auto decompress to handle raw audio response
+            async with aiohttp.ClientSession(auto_decompress=False) as session:
                 async with session.post(url, json=data, headers=headers) as response:
                     if response.status == 200:
                         audio_data = await response.read()
@@ -220,6 +228,7 @@ class DeepgramTTS:
                         }
                     else:
                         error_text = await response.text()
+                        logger.error(f"Deepgram API error details: status={response.status}, url={url}, error={error_text}")
                         raise Exception(f"Deepgram API error: {response.status} - {error_text}")
                         
         except Exception as e:

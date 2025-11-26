@@ -13,9 +13,18 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 ORCHESTRATOR_PORT="${HYPR_AGENT_PORT:-9093}"
-WHISPER_PORT="${HYPR_WHISPER_PORT:-9090}"
+WHISPER_PORT="${HYPR_WHISPER_PORT:-9099}"
 RECORDING_FLAG="/tmp/hypr-agent-recording"
 AUDIO_FILE="/tmp/hypr-agent-audio.wav"
+LOG_FILE="/tmp/hypr-agent.log"
+
+# Audio source - use env var or read from config.yaml
+WHISPER_CONFIG="$PROJECT_DIR/src/Hypr-Whisper/config/config.yaml"
+if [[ -z "${HYPR_AGENT_MIC:-}" ]] && [[ -f "$WHISPER_CONFIG" ]]; then
+    # Extract pulseaudio_source value between quotes
+    AUDIO_SOURCE=$(grep "pulseaudio_source:" "$WHISPER_CONFIG" | sed 's/.*pulseaudio_source: *"\([^"]*\)".*/\1/')
+fi
+AUDIO_SOURCE="${HYPR_AGENT_MIC:-${AUDIO_SOURCE:-@DEFAULT_SOURCE@}}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -23,24 +32,43 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# Logging with timestamps to file and stdout
 log() {
+    local msg="[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] $1"
     echo -e "${GREEN}[hypr-agent]${NC} $1"
+    echo "$msg" >> "$LOG_FILE"
 }
 
 warn() {
+    local msg="[$(date '+%Y-%m-%d %H:%M:%S')] [WARN] $1"
     echo -e "${YELLOW}[hypr-agent]${NC} $1"
+    echo "$msg" >> "$LOG_FILE"
 }
 
 error() {
+    local msg="[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $1"
     echo -e "${RED}[hypr-agent]${NC} $1" >&2
+    echo "$msg" >> "$LOG_FILE"
 }
 
-# TODO: Add audio feedback sounds
-# play_sound() {
-#     local sound="$1"  # start, processing, success, error
-#     local sound_dir="$PROJECT_DIR/sounds"
-#     aplay "$sound_dir/${sound}.wav" 2>/dev/null &
-# }
+# Audio feedback sounds
+SOUNDS_DIR="$SCRIPT_DIR/sounds"
+
+play_sound() {
+    local sound="$1"  # query-in, success, error
+    local sound_file="$SOUNDS_DIR/${sound}.mp3"
+    
+    if [[ -f "$sound_file" ]]; then
+        # Try mpv first (best for mp3), then ffplay, then paplay
+        if command -v mpv &>/dev/null; then
+            mpv --no-terminal --no-video "$sound_file" &>/dev/null &
+        elif command -v ffplay &>/dev/null; then
+            ffplay -nodisp -autoexit "$sound_file" &>/dev/null &
+        elif command -v paplay &>/dev/null; then
+            paplay "$sound_file" &>/dev/null &
+        fi
+    fi
+}
 
 # Check if orchestrator is running
 check_orchestrator() {
@@ -48,22 +76,43 @@ check_orchestrator() {
     return $?
 }
 
-# Send message to orchestrator via WebSocket
+# Send message to orchestrator via REST API
 send_to_orchestrator() {
     local action="$1"
     local query="$2"
     
-    local payload
-    if [[ -n "$query" ]]; then
-        payload=$(jq -n --arg action "$action" --arg query "$query" \
-            '{type: $action, query: $query}')
+    if [[ "$action" == "query" && -n "$query" ]]; then
+        # Play query input sound
+        play_sound "query-in"
+        
+        # Use voice/process endpoint for full pipeline with TTS response
+        local response
+        response=$(curl -s -X POST "http://localhost:$ORCHESTRATOR_PORT/voice/process" \
+            -H "Content-Type: application/json" \
+            -d "{\"text\": \"$query\", \"speak_response\": true}" \
+            --max-time 60)
+        
+        if [[ -n "$response" ]]; then
+            # Extract response text
+            local response_text
+            response_text=$(echo "$response" | jq -r '.response_text // empty')
+            local agent_type
+            agent_type=$(echo "$response" | jq -r '.agent_type // "unknown"')
+            
+            log "Agent ($agent_type): $response_text"
+            return 0
+        fi
+        return 1
     else
-        payload=$(jq -n --arg action "$action" '{type: $action}')
+        # For other actions, use the regular query endpoint
+        local response
+        response=$(curl -s -X POST "http://localhost:$ORCHESTRATOR_PORT/query" \
+            -H "Content-Type: application/json" \
+            -d "{\"query\": \"$query\"}" \
+            --max-time 30)
+        echo "$response"
+        return $?
     fi
-    
-    # Send via netcat (simple TCP)
-    echo "$payload" | nc -N localhost "$ORCHESTRATOR_PORT" 2>/dev/null
-    return $?
 }
 
 # Start recording for agent input
@@ -81,14 +130,12 @@ start_recording() {
     
     # TODO: play_sound "start"
     
-    # Start audio recording using PulseAudio
-    # Get default source
-    local source
-    source=$(pactl get-default-source 2>/dev/null || echo "@DEFAULT_SOURCE@")
+    # Use configured audio source from config.yaml or env var
+    log "Using audio source: $AUDIO_SOURCE"
     
-    # Start recording in background
-    parec --format=s16le --rate=16000 --channels=1 -d "$source" 2>/dev/null | \
-        ffmpeg -y -f s16le -ar 16000 -ac 1 -i pipe:0 "$AUDIO_FILE" &>/dev/null &
+    # Start recording in background using arecord (same as working hypr-voice-record.sh)
+    # Use -f cd for CD quality (16-bit stereo 44100Hz) which is widely compatible
+    arecord -f cd -t wav "$AUDIO_FILE" 2>/dev/null &
     echo $! > /tmp/hypr-agent-recorder.pid
     
     log "Recording started (PID: $(cat /tmp/hypr-agent-recorder.pid 2>/dev/null || echo 'unknown'))"
@@ -101,8 +148,8 @@ stop_recording() {
         local pid
         pid=$(cat /tmp/hypr-agent-recorder.pid)
         kill "$pid" 2>/dev/null || true
-        # Also kill any parec processes
-        pkill -f "parec.*hypr-agent" 2>/dev/null || true
+        # Also kill any arecord processes recording to our file
+        pkill -f "arecord.*hypr-agent" 2>/dev/null || true
         rm -f /tmp/hypr-agent-recorder.pid
     fi
     
@@ -110,35 +157,100 @@ stop_recording() {
     log "Recording stopped"
 }
 
-# Transcribe audio using Whisper
+# Transcribe audio using Whisper (hybrid-whisper-server API)
+# Note: This function outputs ONLY the transcribed text to stdout
+# All logging goes to stderr and log file only
 transcribe_audio() {
     local audio_path="$1"
     
+    # Helper for logging within this function (stderr only to avoid capturing in output)
+    _tlog() {
+        local msg="[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] $1"
+        echo "$msg" >> "$LOG_FILE"
+        echo -e "${GREEN}[hypr-agent]${NC} $1" >&2
+    }
+    _terr() {
+        local msg="[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $1"
+        echo "$msg" >> "$LOG_FILE"
+        echo -e "${RED}[hypr-agent]${NC} $1" >&2
+    }
+    
     if [[ ! -f "$audio_path" ]]; then
-        error "Audio file not found: $audio_path"
+        _terr "Audio file not found: $audio_path"
         return 1
     fi
     
     # Check if Whisper server is running
     if ! nc -z localhost "$WHISPER_PORT" 2>/dev/null; then
-        error "Whisper server not running on port $WHISPER_PORT"
+        _terr "Whisper server not running on port $WHISPER_PORT"
         return 1
     fi
     
-    # Send to Whisper for transcription
-    local response
-    response=$(curl -s -X POST "http://localhost:$WHISPER_PORT/transcribe" \
+    _tlog "Creating Whisper session..."
+    
+    # Step 1: Create a session (requires JSON body)
+    local session_response
+    session_response=$(curl -s -X POST "http://localhost:$WHISPER_PORT/sessions" \
         -H "Content-Type: application/json" \
-        -d "{\"audio_path\": \"$audio_path\", \"language\": \"auto\"}" \
+        -d '{"language": "en", "beam_size": 5, "vad_filter": false}' \
+        --max-time 10)
+    
+    if [[ -z "$session_response" ]]; then
+        _terr "Failed to create Whisper session"
+        return 1
+    fi
+    
+    local session_id
+    session_id=$(echo "$session_response" | jq -r '.session_id // empty' 2>/dev/null)
+    
+    if [[ -z "$session_id" ]]; then
+        _terr "No session_id in response: $session_response"
+        return 1
+    fi
+    
+    _tlog "Session created: $session_id"
+    
+    # Step 2: Upload audio file for transcription
+    _tlog "Uploading audio to Whisper..."
+    local upload_response
+    upload_response=$(curl -s -X POST "http://localhost:$WHISPER_PORT/sessions/$session_id/transcribe" \
+        -F "audio_file=@$audio_path" \
         --max-time 30)
     
-    if [[ -z "$response" ]]; then
-        error "Empty response from Whisper"
-        return 1
+    _tlog "Upload response: $upload_response"
+    
+    # Step 3: Poll for result (with timeout)
+    local max_attempts=30
+    local attempt=0
+    local final_text=""
+    local status_response=""
+    
+    while [[ $attempt -lt $max_attempts ]]; do
+        sleep 0.5
+        
+        status_response=$(curl -s "http://localhost:$WHISPER_PORT/sessions/$session_id" \
+            --max-time 5)
+        
+        local status
+        status=$(echo "$status_response" | jq -r '.status // empty' 2>/dev/null)
+        final_text=$(echo "$status_response" | jq -r '.final_text // empty' 2>/dev/null)
+        
+        _tlog "Poll attempt $attempt: status=$status, text='$final_text'"
+        
+        if [[ "$status" == "completed" ]] || [[ -n "$final_text" ]]; then
+            break
+        fi
+        
+        ((attempt++))
+    done
+    
+    if [[ -z "$final_text" ]]; then
+        # Try to get any text from the response
+        final_text=$(echo "$status_response" | jq -r '.text // .transcription // empty' 2>/dev/null)
     fi
     
-    # Extract text from response
-    echo "$response" | jq -r '.text // .transcription // empty' 2>/dev/null
+    # Output ONLY the transcribed text
+    echo "$final_text"
 }
 
 # Process recorded audio and send to orchestrator
@@ -170,11 +282,16 @@ process_input() {
     
     log "Transcribed: $transcribed"
     
-    # Send to orchestrator
+    # Send to orchestrator voice pipeline
     if check_orchestrator; then
-        send_to_orchestrator "query" "$transcribed"
-        log "Sent to orchestrator"
-        # TODO: play_sound "success"
+        log "Sending to orchestrator..."
+        if send_to_orchestrator "query" "$transcribed"; then
+            log "Response received and spoken via TTS"
+            # TODO: play_sound "success"
+        else
+            warn "Failed to get response from orchestrator"
+            # TODO: play_sound "error"
+        fi
     else
         # Fallback: Output to stdout or clipboard
         warn "Orchestrator not running, copying to clipboard"

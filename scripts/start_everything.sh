@@ -56,10 +56,20 @@ start_orchestrator() {
   log "Starting Agent Orchestrator (9093)..."
   cd "$ROOT_DIR"
   
+  # Load environment variables from .env
+  if [ -f "$ROOT_DIR/.env" ]; then
+    set -a
+    source "$ROOT_DIR/.env"
+    set +a
+    log "Loaded .env file"
+  fi
+  
   # Set orchestrator port
   export ORCHESTRATOR_PORT=9093
+  export PYTHONPATH="$ROOT_DIR/src"
   
-  nohup python -c "
+  # Use the main venv python which has anthropic installed
+  nohup /home/mewtwo/.venv/bin/python -c "
 import uvicorn
 import sys
 sys.path.insert(0, '$ROOT_DIR/src')

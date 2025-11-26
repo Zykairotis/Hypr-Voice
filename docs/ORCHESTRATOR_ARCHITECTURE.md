@@ -27,10 +27,11 @@ The Agent Orchestrator is a Claude Agent SDK-based system that spawns specialize
 
 ## Agent Types
 
-The orchestrator can spawn 4 specialized agent types:
+The orchestrator can spawn 5 specialized agent types:
 
 | Agent | Model | Purpose | Tools |
 |-------|-------|---------|-------|
+| `general-conversation` | haiku | Casual chat, life advice, friendly discussion | None |
 | `code-worker` | sonnet | Code analysis, generation, refactoring | Read, Write, Edit, Grep, Glob |
 | `research-worker` | haiku | Research, information gathering | Read, Grep, Glob |
 | `shell-worker` | sonnet | System operations, bash commands | Bash, Read, Grep |
@@ -48,6 +49,15 @@ POST /query               - Send query to orchestrator
 POST /spawn               - Spawn a new agent
 DELETE /agents/{id}       - Destroy an agent session
 WS   /ws                  - Real-time event stream
+
+# Voice Pipeline Endpoints
+POST /voice/process       - Process text with TTS response
+POST /voice/process/stream - Stream processing with SSE
+POST /voice/transcribe    - Transcribe audio file
+POST /voice/speak         - Text-to-speech (returns audio)
+GET  /voice/conversations - List all conversations
+GET  /voice/conversations/{id} - Get conversation details
+POST /voice/conversations - Create new conversation
 ```
 
 ### Bridge API (Port 8934)
@@ -97,19 +107,35 @@ WS   /ws/orchestrator     - Orchestrator WebSocket proxy
 └─────────────────┘  └─────────────────┘  └─────────────────┘
 ```
 
-## Voice Input (F10 Keybinding)
+## Voice-to-Voice Pipeline
 
-The F10 key triggers voice input mode:
+The complete voice pipeline:
+
+```
+User Voice → Whisper (STT) → Orchestrator → Subagent → Deepgram (TTS) → Audio Response
+```
+
+### F10 Keybinding
 
 1. **F10 Press** → Start audio recording
-2. **F10 Release** → Stop recording, transcribe via Whisper, send to orchestrator
+2. **F10 Release** → Stop recording → Whisper transcription → Orchestrator routing → Agent response → Deepgram TTS → Audio playback
+
+### Manual Usage
 
 ```bash
-# Manual usage
 ./scripts/hypr-agent.sh start    # Start recording
-./scripts/hypr-agent.sh process  # Stop and process
+./scripts/hypr-agent.sh process  # Stop, transcribe, process, speak response
 ./scripts/hypr-agent.sh status   # Check status
 ./scripts/hypr-agent.sh query "your text query"
+```
+
+### TTS Configuration
+
+Set in `.env` or environment:
+```bash
+DEEPGRAM_API_KEY=your-key        # Required for TTS
+HYPR_VOICE_TTS_PROVIDER=deepgram # TTS provider (deepgram, kokoro, elevenlabs)
+HYPR_VOICE_TTS_VOICE=alpha-stella-en-v2  # Voice to use
 ```
 
 ## Orchestrator Internals

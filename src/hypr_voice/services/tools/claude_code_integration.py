@@ -402,29 +402,45 @@ Adjust your responses and suggestions to be relevant to {context.window_class}."
 # Custom tools for Claude
 @tool(
     name="get_application_context",
-    description="Get current application context and window information"
+    description="Get current application context and window information",
+    input_schema={}
 )
-async def get_application_context() -> Dict:
+async def get_application_context(args: dict) -> Dict:
     """Get current application context from Hyprland"""
     monitor = HyprlandMonitor()
     window = await monitor.get_active_window()
     
     if window:
-        return {
+        result = {
             "class": window.get("class", ""),
             "title": window.get("title", ""),
             "detected": True
         }
+        return {
+            "content": [{"type": "text", "text": json.dumps(result)}],
+            "is_error": False,
+            "data": result,
+        }
     
-    return {"detected": False}
+    result = {"detected": False}
+    return {
+        "content": [{"type": "text", "text": json.dumps(result)}],
+        "is_error": True,
+        "data": result,
+    }
 
 
 @tool(
     name="switch_to_window",
-    description="Switch to a specific window by class or title"
+    description="Switch to a specific window by class or title",
+    input_schema={"window_identifier": str}
 )
-async def switch_to_window(window_identifier: str) -> Dict:
+async def switch_to_window(args: dict) -> Dict:
     """Switch to a window using Hyprland"""
+    window_identifier = (args or {}).get("window_identifier", "")
+    if not window_identifier:
+        result = {"success": False, "error": "window_identifier is required"}
+        return {"content": [{"type": "text", "text": json.dumps(result)}], "is_error": True, "data": result}
     try:
         # Get all clients
         monitor = HyprlandMonitor()
@@ -445,23 +461,27 @@ async def switch_to_window(window_identifier: str) -> Dict:
                     )
                     await process.communicate()
                     
-                    return {
+                    result = {
                         "success": True,
                         "switched_to": client.get("class", ""),
                         "title": client.get("title", "")
                     }
+                    return {"content": [{"type": "text", "text": json.dumps(result)}], "is_error": False, "data": result}
         
-        return {"success": False, "error": "Window not found"}
+        result = {"success": False, "error": "Window not found"}
+        return {"content": [{"type": "text", "text": json.dumps(result)}], "is_error": True, "data": result}
         
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        result = {"success": False, "error": str(e)}
+        return {"content": [{"type": "text", "text": json.dumps(result)}], "is_error": True, "data": result}
 
 
 @tool(
     name="list_open_windows",
-    description="List all open windows in Hyprland"
+    description="List all open windows in Hyprland",
+    input_schema={}
 )
-async def list_open_windows() -> Dict:
+async def list_open_windows(args: dict) -> Dict:
     """List all open windows"""
     try:
         monitor = HyprlandMonitor()
@@ -476,14 +496,16 @@ async def list_open_windows() -> Dict:
                 "focused": client.get("focusHistoryID", -1) == 0
             })
         
-        return {
+        result = {
             "success": True,
             "windows": windows,
             "count": len(windows)
         }
+        return {"content": [{"type": "text", "text": json.dumps(result)}], "is_error": False, "data": result}
         
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        result = {"success": False, "error": str(e)}
+        return {"content": [{"type": "text", "text": json.dumps(result)}], "is_error": True, "data": result}
 
 
 # Integration helper for the orchestrator

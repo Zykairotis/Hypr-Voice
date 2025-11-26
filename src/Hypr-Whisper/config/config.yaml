@@ -42,8 +42,8 @@ tcpgen_enabled: false
 
 # Audio Settings for Hyprland
 audio:
-  input_device: "GA102 High Definition Audio Controller Digital Stereo (HDMI)"  # GPU HDMI audio input
-  pulseaudio_source: "alsa_output.pci-0000_2d_00.1.hdmi-stereo.monitor"  # PulseAudio monitor source
+  input_device: "Generic USB Audio"  # USB microphone
+  pulseaudio_source: "alsa_input.usb-Generic_USB_Audio-00.HiFi__Mic1__source"  # Actual microphone (not monitor)
   device_index: null  # Not using index, using device name instead
   sample_rate: 16000
   channels: 1

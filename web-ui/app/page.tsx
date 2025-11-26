@@ -13,6 +13,7 @@ import TTSControlPanel from "@/components/tts/tts-control-panel";
 import MCPDashboard from "@/components/mcp/dashboard/MCPDashboard";
 import AnalyticsDashboard from "@/components/analytics/AnalyticsDashboard";
 import OrchestratorPanel from "@/components/orchestrator/orchestrator-panel";
+import { endpoints } from "@/lib/endpoints";
 
 export default function Dashboard() {
   const [activeView, setActiveView] = useState<"whisper" | "agent" | "orchestrator" | "skills" | "vocabulary" | "tts" | "mcp" | "analytics">("whisper");
@@ -21,6 +22,60 @@ export default function Dashboard() {
   const [orchestratorStatus, setOrchestratorStatus] = useState<"online" | "offline" | "error">("offline");
   const [isClient, setIsClient] = useState(false);
   const [isDarkReader, setIsDarkReader] = useState(false);
+
+  // Independent status checks for header indicators
+  useEffect(() => {
+    const checkAllStatuses = async () => {
+      // Check Whisper status
+      try {
+        const whisperRes = await fetch(endpoints.api.whisperStatus, {
+          signal: AbortSignal.timeout(2000),
+        });
+        if (whisperRes.ok) {
+          const data = await whisperRes.json();
+          setWhisperStatus(data.status === "online" ? "online" : "offline");
+        } else {
+          setWhisperStatus("offline");
+        }
+      } catch {
+        setWhisperStatus("offline");
+      }
+
+      // Check Orchestrator status
+      try {
+        const orchRes = await fetch(endpoints.api.orchestratorStatus, {
+          signal: AbortSignal.timeout(2000),
+        });
+        if (orchRes.ok) {
+          const data = await orchRes.json();
+          setOrchestratorStatus((data.status === "online" || data.status === "healthy") ? "online" : "offline");
+        } else {
+          setOrchestratorStatus("offline");
+        }
+      } catch {
+        setOrchestratorStatus("offline");
+      }
+
+      // Check Agent status (same as orchestrator now)
+      try {
+        const agentRes = await fetch(endpoints.api.orchestratorStatus, {
+          signal: AbortSignal.timeout(2000),
+        });
+        if (agentRes.ok) {
+          const data = await agentRes.json();
+          setAgentStatus((data.status === "online" || data.status === "healthy") ? "online" : "offline");
+        } else {
+          setAgentStatus("offline");
+        }
+      } catch {
+        setAgentStatus("offline");
+      }
+    };
+
+    checkAllStatuses();
+    const interval = setInterval(checkAllStatuses, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     setIsClient(true);

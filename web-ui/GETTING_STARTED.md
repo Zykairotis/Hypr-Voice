@@ -8,8 +8,8 @@ Before you start, ensure you have:
 
 - ✅ **Node.js 18+** and npm installed
 - ✅ **Python 3.10+** installed
-- ✅ **Hypr-Whisper** server running (default: `http://localhost:9090`)
-- ✅ **Hypr-Voice Agent** server running (default: `http://localhost:8922`)
+- ✅ **Hypr-Whisper** server running (default: `http://localhost:9099`)
+- ✅ **Hypr-Voice Orchestrator** server running (default: `http://localhost:9093`)
 
 ## ⚡ Quick Start (Easiest Method)
 
@@ -155,13 +155,13 @@ The UI features a beautiful glassmorphic design:
 1. Ensure Whisper server is running:
    ```bash
    # Check if server is running
-   curl http://localhost:9090/health
+   curl http://localhost:9099/health
    ```
 
 2. Ensure Agent server is running:
    ```bash
    # Check if server is running
-   curl http://localhost:8922/agents/list
+   curl http://localhost:9093/agents
    ```
 
 3. Start servers if needed:
@@ -257,4 +257,3 @@ npm run dev
 The Hypr-Voice Web UI is now ready to use. Enjoy managing your voice transcription and AI agent system with a beautiful, modern interface!
 
 **Happy voice controlling! 🎤✨**
-

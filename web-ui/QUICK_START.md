@@ -44,12 +44,12 @@ pip install -r requirements.txt
 # Whisper server (STT)
 cd /home/mewtwo/Zykairotis/Hypr-Voice
 ./scripts/start_hybrid_server.sh
-# Runs on port 9090
+# Runs on port 9099
 
 # Agent server (Optional)
 cd /home/mewtwo/Zykairotis/Hypr-Voice/src/Hypr-Voice/Agent
 ./start_system.sh
-# Runs on port 8922
+# Runs on port 9093
 ```
 
 ---
@@ -118,8 +118,8 @@ curl http://localhost:8934/health
 # Check what's running on which ports
 lsof -i :8933  # Frontend
 lsof -i :8934  # Backend
-lsof -i :9090  # Whisper server
-lsof -i :8922  # Agent server
+lsof -i :9099  # Whisper server
+lsof -i :9093  # Orchestrator
 ```
 
 ---
@@ -224,14 +224,14 @@ web-ui/
 Acts as a proxy between the frontend and services:
 
 ```
-Frontend (8933) → Backend Bridge (8934) → Whisper (9090)
-                                        → Agent (8922)
+Frontend (8933) → Backend Bridge (8934) → Whisper (9099)
+                                        → Orchestrator (9093)
 ```
 
 ### APIs Connected
 
-- **Whisper Server (9090):** Speech-to-text transcription
-- **Agent Server (8922):** Multi-agent orchestration
+- **Whisper Server (9099):** Speech-to-text transcription
+- **Orchestrator (9093):** Multi-agent orchestration
 - **Context Manager:** Live window and clipboard monitoring
 - **Vocabulary System:** Custom word correction
 
@@ -350,8 +350,8 @@ DEEPGRAM_API_KEY=your_key_here
 
 # Optional: Custom ports
 NEXT_PUBLIC_BACKEND_URL=http://localhost:8934
-NEXT_PUBLIC_WHISPER_URL=http://localhost:9090
-NEXT_PUBLIC_AGENT_URL=http://localhost:8922
+NEXT_PUBLIC_WHISPER_URL=http://localhost:9099
+NEXT_PUBLIC_AGENT_URL=http://localhost:9093
 ```
 
 ---

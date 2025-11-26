@@ -20,6 +20,7 @@ class AgentType(str, Enum):
     RESEARCH = "research-worker"
     SHELL = "shell-worker"
     VOICE = "voice-worker"
+    GENERAL = "general-conversation"
     ORCHESTRATOR = "orchestrator"  # Handle directly
 
 
@@ -121,6 +122,33 @@ class QueryRouter:
                 ],
                 "weight": 0.9,
             },
+            AgentType.GENERAL: {
+                "keywords": [
+                    "hi", "hello", "hey", "howdy", "greetings",
+                    "how are you", "what's up", "how is life", "how's it going",
+                    "thanks", "thank you", "appreciate",
+                    "advice", "help me", "what do you think", "your opinion",
+                    "tell me about", "can you explain", "i'm feeling",
+                    "life", "success", "happy", "motivation", "inspire",
+                    "chat", "talk", "conversation", "discuss",
+                    "good morning", "good night", "goodbye", "bye",
+                    "please", "could you", "would you", "i need",
+                    "how can i", "what should i", "why do", "why is",
+                ],
+                "patterns": [
+                    r"^(hi|hello|hey|howdy)\b",
+                    r"^(good\s+)?(morning|afternoon|evening|night)",
+                    r"how\s+(are|is)\s+(you|life|everything|things)",
+                    r"what('s|\s+is)\s+(up|new|happening)",
+                    r"(thanks?|thank\s+you)",
+                    r"(can|could|would)\s+you\s+(please\s+)?(help|tell|explain)",
+                    r"i('m|\s+am)\s+(feeling|wondering|thinking|curious)",
+                    r"what\s+do\s+you\s+think",
+                    r"(your|any)\s+(advice|suggestions?|thoughts?|opinion)",
+                    r"how\s+(can|do|should)\s+i\s+",
+                ],
+                "weight": 1.1,  # Slightly higher to catch conversational queries
+            },
         }
         
         # Compile regex patterns
@@ -212,6 +240,7 @@ class QueryRouter:
             AgentType.RESEARCH: "Query requires information gathering",
             AgentType.SHELL: "Query involves system operations",
             AgentType.VOICE: "Query involves voice synthesis",
+            AgentType.GENERAL: "Query is conversational or general chat",
             AgentType.ORCHESTRATOR: "General query for direct handling",
         }
         

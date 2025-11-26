@@ -134,6 +134,11 @@ src/api/logs/**/*.json
 *.so
 *.dylib
 
+
+# Removed Windows wrapper files per user request
+hive-mind-prompt-*.txt
+old_files/
+
 # Claude Flow generated files
 .claude/settings.local.json
 .mcp.json
@@ -160,4 +165,3 @@ coordination/orchestration/*
 claude-flow
 # Removed Windows wrapper files per user request
 hive-mind-prompt-*.txt
-old_files/

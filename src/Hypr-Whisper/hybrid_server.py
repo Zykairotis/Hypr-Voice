@@ -878,7 +878,7 @@ async def root():
     }
 
 @app.post("/sessions", response_model=TranscriptionResponse)
-async def create_session(request: TranscriptionRequest):
+async def create_session(request: TranscriptionRequest = TranscriptionRequest()):
     """Create a new transcription session."""
     global model, active_sessions
     

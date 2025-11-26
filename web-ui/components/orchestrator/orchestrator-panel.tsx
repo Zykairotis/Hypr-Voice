@@ -1,13 +1,17 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Network, Bot, Terminal, Cpu, Activity } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Network, Bot, Terminal, Cpu, Activity, MessageSquare, Zap } from "lucide-react";
 import OrchestratorStatus from "./orchestrator-status";
 import AgentTypes from "./agent-types";
 import ActiveAgents from "./active-agents";
 import QueryInterface from "./query-interface";
+import ConversationPanel from "./conversation-panel";
+import { endpoints } from "@/lib/endpoints";
+import { useOrchestratorWebSocket } from "@/lib/orchestrator-websocket";
 
 interface OrchestratorPanelProps {
   onStatusChange: (status: "online" | "offline" | "error") => void;
@@ -15,16 +19,11 @@ interface OrchestratorPanelProps {
 
 export default function OrchestratorPanel({ onStatusChange }: OrchestratorPanelProps) {
   const [status, setStatus] = useState<"online" | "offline" | "error">("offline");
+  const { isConnected: wsConnected } = useOrchestratorWebSocket();
 
-  useEffect(() => {
-    checkOrchestratorStatus();
-    const interval = setInterval(checkOrchestratorStatus, 5000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const checkOrchestratorStatus = async () => {
+  const checkOrchestratorStatus = useCallback(async () => {
     try {
-      const response = await fetch("http://localhost:8934/api/orchestrator/status", {
+      const response = await fetch(endpoints.direct.health, {
         signal: AbortSignal.timeout(3000),
       });
       if (response.ok) {
@@ -40,7 +39,13 @@ export default function OrchestratorPanel({ onStatusChange }: OrchestratorPanelP
       setStatus("offline");
       onStatusChange("offline");
     }
-  };
+  }, [onStatusChange]);
+
+  useEffect(() => {
+    checkOrchestratorStatus();
+    const interval = setInterval(checkOrchestratorStatus, wsConnected ? 10000 : 5000);
+    return () => clearInterval(interval);
+  }, [checkOrchestratorStatus, wsConnected]);
 
   return (
     <div className="space-y-6">
@@ -52,8 +57,8 @@ export default function OrchestratorPanel({ onStatusChange }: OrchestratorPanelP
               <Network className="w-5 h-5 text-violet-400" />
             </div>
             <div>
-              <CardTitle className="flex items-center gap-2">
-                Agent Orchestrator
+              <CardTitle className="flex flex-wrap items-center gap-2">
+                <span className="text-base sm:text-lg">Agent Orchestrator</span>
                 <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                   status === "online" 
                     ? "bg-green-500/20 text-green-400 border border-green-500/30" 
@@ -61,6 +66,12 @@ export default function OrchestratorPanel({ onStatusChange }: OrchestratorPanelP
                 }`}>
                   {status}
                 </span>
+                {wsConnected && (
+                  <Badge variant="outline" className="bg-green-500/10 text-green-400 border-green-500/30 text-xs">
+                    <Zap className="w-3 h-3 mr-1" />
+                    Live
+                  </Badge>
+                )}
               </CardTitle>
               <CardDescription>
                 Claude Agent SDK orchestration system with specialized subagents
@@ -73,25 +84,8 @@ export default function OrchestratorPanel({ onStatusChange }: OrchestratorPanelP
         </CardContent>
       </Card>
 
-      {/* Query Interface */}
-      <Card className="glass glass-hover border-border/50">
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-gradient-to-br from-blue-500/20 to-cyan-500/20 border border-blue-500/30">
-              <Terminal className="w-5 h-5 text-blue-400" />
-            </div>
-            <div>
-              <CardTitle>Query Interface</CardTitle>
-              <CardDescription>
-                Send queries to the orchestrator (F10 for voice input)
-              </CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <QueryInterface disabled={status !== "online"} />
-        </CardContent>
-      </Card>
+      {/* Voice Conversation */}
+      <ConversationPanel orchestratorOnline={status === "online"} />
 
       {/* Tabs for Agent Management */}
       <Card className="glass glass-hover border-border/50">
@@ -108,7 +102,7 @@ export default function OrchestratorPanel({ onStatusChange }: OrchestratorPanelP
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="types" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 glass p-1">
+            <TabsList className="grid w-full grid-cols-3 glass p-1">
               <TabsTrigger value="types" className="data-[state=active]:bg-violet-500/20">
                 <Bot className="w-4 h-4 mr-2" />
                 Agent Types
@@ -116,6 +110,10 @@ export default function OrchestratorPanel({ onStatusChange }: OrchestratorPanelP
               <TabsTrigger value="active" className="data-[state=active]:bg-violet-500/20">
                 <Activity className="w-4 h-4 mr-2" />
                 Active Sessions
+              </TabsTrigger>
+              <TabsTrigger value="query" className="data-[state=active]:bg-violet-500/20">
+                <Terminal className="w-4 h-4 mr-2" />
+                Query
               </TabsTrigger>
             </TabsList>
 
@@ -125,6 +123,10 @@ export default function OrchestratorPanel({ onStatusChange }: OrchestratorPanelP
 
             <TabsContent value="active" className="mt-6">
               <ActiveAgents />
+            </TabsContent>
+
+            <TabsContent value="query" className="mt-6">
+              <QueryInterface disabled={status !== "online"} />
             </TabsContent>
           </Tabs>
         </CardContent>
