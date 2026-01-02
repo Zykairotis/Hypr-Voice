@@ -11,11 +11,13 @@ import uuid
 from typing import AsyncIterator, Optional, Dict, Any
 from datetime import datetime
 
-try:
-    from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions
-    CLAUDE_SDK_AVAILABLE = True
-except ImportError:
-    CLAUDE_SDK_AVAILABLE = False
+from ..services.sdk_compat import (
+    ClaudeSDKClient,
+    ClaudeAgentOptions,
+    CLAUDE_SDK_AVAILABLE
+)
+
+if not CLAUDE_SDK_AVAILABLE:
     logging.warning("Claude Agent SDK not available - enhanced mode will be disabled")
 
 from ..services.tools import hyprland_ss_ctx

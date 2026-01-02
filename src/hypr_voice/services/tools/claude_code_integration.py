@@ -14,37 +14,25 @@ from typing import Dict, List, Optional, Any, AsyncIterator
 from datetime import datetime
 from dataclasses import dataclass, field
 
-try:
-    # Try to import the real Claude SDK
-    from claude_agent_sdk import (
-        ClaudeSDKClient,
-        ClaudeAgentOptions,
-        AssistantMessage,
-        UserMessage,
-        SystemMessage,
-        ResultMessage,
-        TextBlock,
-        ThinkingBlock,
-        ToolUseBlock,
-        ToolResultBlock,
-        tool
-    )
-except ImportError:
-    # Fall back to mock implementation
-    from claude_agent_sdk_mock import (
-        ClaudeSDKClient,
-        ClaudeAgentOptions,
-        AssistantMessage,
-        UserMessage,
-        SystemMessage,
-        ResultMessage,
-        TextBlock,
-        ThinkingBlock,
-        ToolUseBlock,
-        ToolResultBlock,
-        tool
-    )
-    logging.warning("Using mock Claude SDK implementation")
+# Claude SDK compatibility layer
+from ..sdk_compat import (
+    ClaudeSDKClient,
+    ClaudeAgentOptions,
+    AssistantMessage,
+    UserMessage,
+    SystemMessage,
+    ResultMessage,
+    TextBlock,
+    ThinkingBlock,
+    ToolUseBlock,
+    ToolResultBlock,
+    tool,
+    CLAUDE_SDK_AVAILABLE,
+    CLAUDE_SDK_MOCK
+)
+
+if CLAUDE_SDK_MOCK:
+    logger.warning("Using mock Claude SDK implementation")
 
 # Import vocabulary manager from Hypr-Whisper
 sys.path.append(str(Path(__file__).parent.parent.parent / "Hypr-Whisper"))
@@ -514,6 +502,11 @@ async def create_context_aware_agent(
     working_directory: str,
     enable_monitoring: bool = True,
     monitor_interval: float = 0.1,
+    permission_mode: str = "default",
+    system_prompt: Optional[str] = None,
+    allowed_tools: Optional[List[str]] = None,
+    setting_sources: Optional[List[str]] = None,
+    can_use_tool=None,
     **kwargs
 ) -> ClaudeCodeAgent:
     """
@@ -535,6 +528,12 @@ async def create_context_aware_agent(
             switch_to_window,
             list_open_windows
         ],
+        working_directory=working_directory,
+        permission_mode=permission_mode,
+        system_prompt=system_prompt,
+        allowed_tools=allowed_tools,
+        setting_sources=setting_sources,
+        can_use_tool=can_use_tool,
         **kwargs
     )
     

@@ -10,10 +10,7 @@ from typing import Dict, Optional, List
 
 logger = logging.getLogger(__name__)
 
-try:
-    from claude_agent_sdk import tool
-except ImportError:
-    from claude_agent_sdk_mock import tool
+from ..sdk_compat import tool
 
 
 @tool(

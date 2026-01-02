@@ -94,11 +94,27 @@ class ToolResultBlock(ContentBlock):
     """Tool result block"""
     tool_name: str
     result: Any
-    
+
     def __init__(self, tool_name: str, result: Any):
         super().__init__(type="tool_result")
         self.tool_name = tool_name
         self.result = result
+
+
+# Permission results
+@dataclass
+class PermissionResultAllow:
+    """Allow tool execution"""
+    behavior: str = "allow"
+    message: Optional[str] = None
+    updated_input: Optional[Dict[str, Any]] = None
+
+
+@dataclass
+class PermissionResultDeny:
+    """Deny tool execution"""
+    behavior: str = "deny"
+    message: Optional[str] = None
 
 
 # Options and configuration
@@ -241,13 +257,32 @@ __all__ = [
     'ClaudeAgentOptions',
     'Message',
     'UserMessage',
-    'AssistantMessage', 
+    'AssistantMessage',
     'SystemMessage',
     'ResultMessage',
     'TextBlock',
     'ThinkingBlock',
     'ToolUseBlock',
     'ToolResultBlock',
+    'PermissionResultAllow',
+    'PermissionResultDeny',
     'tool',
-    'create_sdk_mcp_server'
+    'create_sdk_mcp_server',
+    'query',
+    'AgentDefinition'
 ]
+
+async def query(**kwargs):
+    """Mock query function"""
+    options = kwargs.get('options')
+    client = ClaudeSDKClient(options)
+    await client.connect()
+    await client.query(kwargs.get('prompt', ''))
+    async for msg in client.receive_messages():
+        yield msg
+
+class AgentDefinition:
+    """Mock AgentDefinition"""
+    def __init__(self, **kwargs):
+        for k, v in kwargs.items():
+            setattr(self, k, v)

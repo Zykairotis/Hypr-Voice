@@ -16,10 +16,7 @@ from functools import lru_cache
 
 logger = logging.getLogger(__name__)
 
-try:
-    from claude_agent_sdk import tool
-except ImportError:
-    from claude_agent_sdk_mock import tool
+from ..sdk_compat import tool
 
 # Cache for client data (short duration to avoid redundant calls)
 _client_cache: Optional[Dict] = None
@@ -141,7 +138,12 @@ def _generate_filename(prefix: str = "screenshot") -> str:
 @tool(
     name="get_hyprland_all_clients",
     description="Get comprehensive data for all Hyprland clients including address, class, title, workspace, geometry, focus state, and metadata. Returns enriched client information optimized for AI agent consumption.",
-    input_schema={}
+    input_schema={
+        "type": "object",
+        "properties": {},
+        "additionalProperties": False,
+        "description": "No arguments required to retrieve all client data."
+    }
 )
 async def get_hyprland_all_clients(args: dict) -> Dict:
     """Get all Hyprland clients with enriched data"""
@@ -178,7 +180,12 @@ async def get_hyprland_all_clients(args: dict) -> Dict:
 @tool(
     name="get_hyprland_active_client",
     description="Get detailed data for the currently active/focused window in Hyprland. Returns comprehensive information including address, class, title, workspace, geometry, and state.",
-    input_schema={}
+    input_schema={
+        "type": "object",
+        "properties": {},
+        "additionalProperties": False,
+        "description": "No arguments required to retrieve active client data."
+    }
 )
 async def get_hyprland_active_client(args: dict) -> Dict:
     """Get the currently active/focused client"""
@@ -245,7 +252,16 @@ async def get_hyprland_active_client(args: dict) -> Dict:
 @tool(
     name="get_hyprland_clients_by_class",
     description="Filter Hyprland clients by window class name. Returns all matching clients with comprehensive data.",
-    input_schema={"class_name": str}
+    input_schema={
+        "type": "object",
+        "properties": {
+            "class_name": {
+                "type": "string",
+                "description": "The window class name to filter by (e.g., 'kitty', 'firefox', 'Code'). Search is case-insensitive substring match."
+            }
+        },
+        "required": ["class_name"]
+    }
 )
 async def get_hyprland_clients_by_class(args: dict) -> Dict:
     """Get clients filtered by window class"""
@@ -291,7 +307,16 @@ async def get_hyprland_clients_by_class(args: dict) -> Dict:
 @tool(
     name="get_hyprland_clients_by_title",
     description="Filter Hyprland clients by window title pattern (substring match). Returns all matching clients with comprehensive data.",
-    input_schema={"title_pattern": str}
+    input_schema={
+        "type": "object",
+        "properties": {
+            "title_pattern": {
+                "type": "string",
+                "description": "The window title substring to match (e.g., 'GitHub', 'Project'). Search is case-insensitive."
+            }
+        },
+        "required": ["title_pattern"]
+    }
 )
 async def get_hyprland_clients_by_title(args: dict) -> Dict:
     """Get clients filtered by title pattern"""
@@ -337,7 +362,16 @@ async def get_hyprland_clients_by_title(args: dict) -> Dict:
 @tool(
     name="get_hyprland_clients_by_workspace",
     description="Get all clients in a specific workspace. Returns comprehensive data for all windows in the specified workspace.",
-    input_schema={"workspace_id": int}
+    input_schema={
+        "type": "object",
+        "properties": {
+            "workspace_id": {
+                "type": "integer",
+                "description": "The numeric ID of the workspace (e.g., 1, 2, 10)."
+            }
+        },
+        "required": ["workspace_id"]
+    }
 )
 async def get_hyprland_clients_by_workspace(args: dict) -> Dict:
     """Get all clients in a workspace"""
@@ -387,7 +421,25 @@ async def get_hyprland_clients_by_workspace(args: dict) -> Dict:
 @tool(
     name="screenshot_hyprland_client",
     description="Take a screenshot of a specific Hyprland client window by address. Uses grim-hyprland for ultra-fast capture (<100ms). Can save to file and/or copy to clipboard.",
-    input_schema={"address": str, "output_path": str, "copy_to_clipboard": bool}
+    input_schema={
+        "type": "object",
+        "properties": {
+            "address": {
+                "type": "string",
+                "description": "The hex address of the window (e.g., '0x55d68892f3b0') as returned by client enumeration tools."
+            },
+            "output_path": {
+                "type": "string",
+                "description": "Optional absolute path where to save the PNG file. If not provided, saves to ~/screenshots with a timestamped name."
+            },
+            "copy_to_clipboard": {
+                "type": "boolean",
+                "description": "Whether to copy the screenshot to the system clipboard using wl-copy.",
+                "default": False
+            }
+        },
+        "required": ["address"]
+    }
 )
 async def screenshot_hyprland_client(args: dict) -> Dict:
     """Screenshot a specific client by address"""
@@ -526,7 +578,25 @@ async def screenshot_hyprland_client(args: dict) -> Dict:
 @tool(
     name="screenshot_hyprland_client_by_class",
     description="Take a screenshot of a Hyprland client window by class name. If multiple windows match, takes the first one. Uses grim-hyprland for ultra-fast capture.",
-    input_schema={"class_name": str, "output_path": str, "copy_to_clipboard": bool}
+    input_schema={
+        "type": "object",
+        "properties": {
+            "class_name": {
+                "type": "string",
+                "description": "The window class name (e.g., 'firefox', 'Code'). Case-insensitive."
+            },
+            "output_path": {
+                "type": "string",
+                "description": "Optional absolute path for the output PNG file."
+            },
+            "copy_to_clipboard": {
+                "type": "boolean",
+                "description": "Whether to copy the screenshot to the system clipboard.",
+                "default": False
+            }
+        },
+        "required": ["class_name"]
+    }
 )
 async def screenshot_hyprland_client_by_class(args: dict) -> Dict:
     """Screenshot a client by class name"""
@@ -571,7 +641,25 @@ async def screenshot_hyprland_client_by_class(args: dict) -> Dict:
 @tool(
     name="screenshot_hyprland_client_by_title",
     description="Take a screenshot of a Hyprland client window by title pattern. If multiple windows match, takes the first one. Uses grim-hyprland for ultra-fast capture.",
-    input_schema={"title_pattern": str, "output_path": str, "copy_to_clipboard": bool}
+    input_schema={
+        "type": "object",
+        "properties": {
+            "title_pattern": {
+                "type": "string",
+                "description": "The window title pattern/substring to match. Case-insensitive."
+            },
+            "output_path": {
+                "type": "string",
+                "description": "Optional absolute path for the output PNG file."
+            },
+            "copy_to_clipboard": {
+                "type": "boolean",
+                "description": "Whether to copy the screenshot to the system clipboard.",
+                "default": False
+            }
+        },
+        "required": ["title_pattern"]
+    }
 )
 async def screenshot_hyprland_client_by_title(args: dict) -> Dict:
     """Screenshot a client by title pattern"""
@@ -616,7 +704,20 @@ async def screenshot_hyprland_client_by_title(args: dict) -> Dict:
 @tool(
     name="screenshot_hyprland_active_window",
     description="Take a screenshot of the currently active/focused window in Hyprland. Uses grim-hyprland for ultra-fast capture (<100ms). This is the fastest method for capturing the active window.",
-    input_schema={"output_path": str, "copy_to_clipboard": bool}
+    input_schema={
+        "type": "object",
+        "properties": {
+            "output_path": {
+                "type": "string",
+                "description": "Optional absolute path for the output PNG file."
+            },
+            "copy_to_clipboard": {
+                "type": "boolean",
+                "description": "Whether to copy the screenshot to the system clipboard.",
+                "default": False
+            }
+        }
+    }
 )
 async def screenshot_hyprland_active_window(args: dict) -> Dict:
     """Screenshot the currently active window (fastest method)"""
@@ -668,7 +769,20 @@ async def screenshot_hyprland_active_window(args: dict) -> Dict:
 @tool(
     name="screenshot_hyprland_full_screen",
     description="Take a screenshot of the entire screen/display. Uses grim for full screen capture. Can save to file and/or copy to clipboard.",
-    input_schema={"output_path": str, "copy_to_clipboard": bool}
+    input_schema={
+        "type": "object",
+        "properties": {
+            "output_path": {
+                "type": "string",
+                "description": "Optional absolute path for the output PNG file."
+            },
+            "copy_to_clipboard": {
+                "type": "boolean",
+                "description": "Whether to copy the screenshot to the system clipboard.",
+                "default": False
+            }
+        }
+    }
 )
 async def screenshot_hyprland_full_screen(args: dict) -> Dict:
     """Screenshot the entire screen"""
@@ -779,7 +893,20 @@ async def screenshot_hyprland_full_screen(args: dict) -> Dict:
 @tool(
     name="screenshot_hyprland_workspace",
     description="Take screenshots of all windows in a specific workspace. Returns paths to all captured screenshots.",
-    input_schema={"workspace_id": int, "output_dir": str}
+    input_schema={
+        "type": "object",
+        "properties": {
+            "workspace_id": {
+                "type": "integer",
+                "description": "The numeric ID of the workspace (e.g., 1, 2)."
+            },
+            "output_dir": {
+                "type": "string",
+                "description": "Optional directory path to store the screenshots. If not provided, creates a sub-directory in ~/screenshots."
+            }
+        },
+        "required": ["workspace_id"]
+    }
 )
 async def screenshot_hyprland_workspace(args: dict) -> Dict:
     """Screenshot all windows in a workspace"""

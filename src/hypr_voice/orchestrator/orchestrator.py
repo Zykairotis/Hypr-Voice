@@ -6,7 +6,6 @@ Maintains minimal context, delegates to specialized subagents.
 """
 
 import asyncio
-import logging
 from typing import Any, AsyncIterator, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -16,38 +15,37 @@ from .router import QueryRouter, RouteDecision
 from .cerebras_router import CerebrasRouter
 from .context_manager import ContextManager
 from .registry import AgentRegistry, AgentSession
+from ..core.loggurl import LogGurl
 
-logger = logging.getLogger(__name__)
+log = LogGurl("orchestrator")
 
-# Try to import Claude Agent SDK, fall back to compatibility mode
-try:
-    from claude_agent_sdk import (
-        ClaudeSDKClient,
-        ClaudeAgentOptions,
-        AgentDefinition,
-        query as sdk_query,
-        AssistantMessage,
-        TextBlock,
-        ToolUseBlock,
-        ResultMessage,
-    )
-    CLAUDE_SDK_AVAILABLE = True
-except ImportError:
-    CLAUDE_SDK_AVAILABLE = False
-    logger.warning("Claude Agent SDK not available. Using fallback mode.")
+# Claude SDK compatibility layer
+from ..services.sdk_compat import (
+    ClaudeSDKClient,
+    ClaudeAgentOptions,
+    AgentDefinition,
+    sdk_query,
+    AssistantMessage,
+    TextBlock,
+    ToolUseBlock,
+    ResultMessage,
+    CLAUDE_SDK_AVAILABLE
+)
 
 
 @dataclass
 class OrchestratorConfig:
     """Configuration for the orchestrator."""
     model: str = "claude-sonnet-4-5"
-    max_turns: int = 20
-    permission_mode: str = "acceptEdits"
-    enable_subagents: bool = True
+    max_turns: int = 1  # Fast: single turn only
+    permission_mode: str = "default"
+    setting_sources: list[str] = field(default_factory=lambda: ["project"])
+    # Direct API is faster for voice (~3s vs 68s for SDK)
+    enable_subagents: bool = False
     enable_context_compression: bool = True
     working_directory: Optional[str] = None
     allowed_tools: list[str] = field(default_factory=lambda: [
-        "Read", "Write", "Edit", "Grep", "Glob", "Bash"
+        "Read", "Write", "Edit", "Grep", "Glob", "Bash", "Skill", "SlashCommand"
     ])
 
 
@@ -79,18 +77,18 @@ class HyprVoiceOrchestrator:
     - Implements agents parameter for programmatic subagent definitions
     """
     
-    def __init__(self, config: Optional[OrchestratorConfig] = None, use_cerebras_router: bool = True):
+    def __init__(self, config: Optional[OrchestratorConfig] = None, use_cerebras_router: bool = False):
         self.config = config or OrchestratorConfig()
         
-        # Use Cerebras for intelligent routing, fallback to keyword matching
+        # Keyword router is instant, Cerebras adds 2-8s latency
         if use_cerebras_router:
             self.router = CerebrasRouter()
             self.keyword_router = QueryRouter()  # Keep as fallback
-            logger.info("Using Cerebras-powered intelligent router")
+            log.info("Router: Cerebras-powered intelligent routing")
         else:
             self.router = QueryRouter()
             self.keyword_router = None
-            logger.info("Using keyword-based router")
+            log.info("Router: Keyword-based matching")
         
         self.context_manager = ContextManager()
         self.registry = AgentRegistry()
@@ -101,7 +99,7 @@ class HyprVoiceOrchestrator:
         # Define subagents
         self.agent_definitions = self._define_agents()
         
-        logger.info(f"Orchestrator initialized with session {self.session_id[:8]}")
+        log.info(f"Initialized session {self.session_id[:8]}")
     
     def _define_agents(self) -> dict[str, dict]:
         """Define specialized subagent configurations."""
@@ -203,7 +201,7 @@ Guidelines for voice output:
                 else:
                     handler(event)
             except Exception as e:
-                logger.error(f"Event handler error: {e}")
+                log.error(f"Event handler error: {e}")
     
     async def process(self, query: str, session_id: Optional[str] = None) -> AsyncIterator[dict]:
         """
@@ -217,11 +215,21 @@ Guidelines for voice output:
             Response chunks as dictionaries
         """
         session_id = session_id or self.session_id
-        
+        t0 = datetime.utcnow()
+        log.start(f"session={session_id[:8]}")
+        log.info(f"Query: \"{query[:80]}{'...' if len(query) > 80 else ''}\"")
         await self._emit_event("query_received", {"query": query}, session_id)
         
         # Route the query to determine handling strategy
-        route = self.router.route(query)
+        route_start = datetime.utcnow()
+        # Use async routing with timeout from CEREBRAS_ROUTER_TIMEOUT env var
+        if hasattr(self.router, 'route_async'):
+            route = await self.router.route_async(query)
+        else:
+            route = self.router.route(query)
+        route_ms = (datetime.utcnow() - route_start).total_seconds() * 1000
+        
+        log.routing(route.agent_type, route.confidence, route.reasoning or "")
         
         await self._emit_event("route_decision", {
             "route": route.agent_type,
@@ -229,96 +237,87 @@ Guidelines for voice output:
             "reasoning": route.reasoning,
         }, session_id)
         
+        # Yield route decision so callers can see it
+        yield {
+            "type": "route_decision",
+            "route": route.agent_type,
+            "confidence": route.confidence,
+            "reasoning": route.reasoning,
+        }
+        
         if CLAUDE_SDK_AVAILABLE and self.config.enable_subagents:
+            log.info("Using Claude SDK")
             async for chunk in self._process_with_sdk(query, route, session_id):
                 yield chunk
         else:
+            log.info(f"Using direct API (SDK={CLAUDE_SDK_AVAILABLE})")
             async for chunk in self._process_fallback(query, route, session_id):
                 yield chunk
         
         await self._emit_event("query_completed", {"query": query}, session_id)
+        total_ms = (datetime.utcnow() - t0).total_seconds() * 1000
+        log.complete(f"session={session_id[:8]}", duration_ms=total_ms)
     
     async def _process_with_sdk(
         self, 
-        query: str, 
+        prompt: str, 
         route: RouteDecision, 
         session_id: str
     ) -> AsyncIterator[dict]:
-        """Process query using Claude Agent SDK."""
-        # Convert agent definitions to SDK format
-        agents = {}
-        for name, config in self.agent_definitions.items():
-            agents[name] = AgentDefinition(
-                description=config["description"],
-                prompt=config["prompt"],
-                tools=config.get("tools"),
-                model=config.get("model"),
-            )
+        """Process query using Claude Agent SDK with simple query function."""
+        # Get agent-specific system prompt
+        agent_config = self.agent_definitions.get(route.agent_type, {})
+        system_prompt = agent_config.get("prompt", "You are a helpful assistant.")
         
         options = ClaudeAgentOptions(
-            system_prompt={"type": "preset", "preset": "claude_code"},
-            agents=agents,
+            system_prompt=system_prompt,
             permission_mode=self.config.permission_mode,
             max_turns=self.config.max_turns,
+            working_directory=self.config.working_directory,
             allowed_tools=self.config.allowed_tools,
-            cwd=self.config.working_directory,
+            setting_sources=self.config.setting_sources,
         )
         
         try:
-            async with ClaudeSDKClient(options) as client:
-                # Register this session
-                agent_session = self.registry.create_session(
-                    session_id=session_id,
-                    agent_type=route.agent_type,
-                    query=query,
-                )
-                
-                await client.query(query, session_id=session_id)
-                
-                async for message in client.receive_response():
-                    if isinstance(message, AssistantMessage):
-                        for block in message.content:
-                            if isinstance(block, TextBlock):
-                                yield {
-                                    "type": "text",
-                                    "content": block.text,
-                                    "agent": route.agent_type,
-                                }
-                            elif isinstance(block, ToolUseBlock):
-                                yield {
-                                    "type": "tool_use",
-                                    "tool": block.name,
-                                    "input": block.input,
-                                    "agent": route.agent_type,
-                                }
-                    elif isinstance(message, ResultMessage):
-                        # Compress result for context management
-                        if self.config.enable_context_compression:
-                            compressed = self.context_manager.compress_result(
-                                message.result or "",
-                                max_tokens=500
-                            )
-                        else:
-                            compressed = message.result
-                        
-                        yield {
-                            "type": "result",
-                            "content": compressed,
-                            "session_id": message.session_id,
-                            "cost_usd": message.total_cost_usd,
-                            "turns": message.num_turns,
-                        }
-                        
-                        # Update session
-                        self.registry.complete_session(session_id)
+            log.info(f"SDK query agent={route.agent_type}")
+            llm_start = datetime.utcnow()
+            full_response = ""
+            
+            # Use simple query function - more reliable
+            async for message in sdk_query(prompt=prompt, options=options):
+                if isinstance(message, AssistantMessage):
+                    for block in message.content:
+                        if isinstance(block, TextBlock):
+                            full_response += block.text
+                            yield {
+                                "type": "text",
+                                "content": block.text,
+                                "agent": route.agent_type,
+                            }
+                        elif isinstance(block, ToolUseBlock):
+                            yield {
+                                "type": "tool_use",
+                                "tool": block.name,
+                                "input": block.input,
+                                "agent": route.agent_type,
+                            }
+                elif isinstance(message, ResultMessage):
+                    llm_ms = (datetime.utcnow() - llm_start).total_seconds() * 1000
+                    log.llm_complete(len(full_response), llm_ms)
+                    
+                    yield {
+                        "type": "result",
+                        "content": "Completed",
+                        "session_id": session_id,
+                        "cost_usd": getattr(message, 'total_cost_usd', None),
+                        "turns": getattr(message, 'num_turns', 1),
+                    }
                         
         except Exception as e:
-            logger.error(f"SDK processing error: {e}")
-            yield {
-                "type": "error",
-                "error": str(e),
-                "agent": route.agent_type,
-            }
+            log.error(f"SDK error: {type(e).__name__}: {e}")
+            # Fall back to direct API
+            async for fallback_chunk in self._process_fallback(prompt, route, session_id):
+                yield fallback_chunk
     
     async def _process_fallback(
         self, 
@@ -350,21 +349,32 @@ Guidelines for voice output:
             
             client = anthropic.Anthropic(**client_kwargs)
             agent_config = self.agent_definitions.get(route.agent_type, {})
+            system_prompt = agent_config.get("prompt", "You are a helpful assistant.")
             
+            log.llm_start(model, f"agent={route.agent_type}")
+            
+            llm_start = datetime.utcnow()
             response = client.messages.create(
                 model=model,
                 max_tokens=4096,
-                system=agent_config.get("prompt", "You are a helpful assistant."),
+                system=system_prompt,
                 messages=[{"role": "user", "content": query}],
             )
+            llm_ms = (datetime.utcnow() - llm_start).total_seconds() * 1000
             
+            # Extract response text
+            response_text = ""
             for block in response.content:
                 if hasattr(block, "text"):
+                    response_text += block.text
                     yield {
                         "type": "text",
                         "content": block.text,
                         "agent": route.agent_type,
                     }
+            
+            log.llm_complete(len(response_text), llm_ms)
+            log.debug(f"Response: \"{response_text[:100]}{'...' if len(response_text) > 100 else ''}\"")
             
             yield {
                 "type": "result",
@@ -375,7 +385,7 @@ Guidelines for voice output:
             }
             
         except Exception as e:
-            logger.error(f"Fallback processing error: {e}")
+            log.error(f"LLM error: {type(e).__name__}: {e}")
             yield {
                 "type": "error",
                 "error": str(e),
@@ -451,7 +461,7 @@ Guidelines for voice output:
             }
             
         except Exception as e:
-            logger.error(f"Streaming fallback error: {e}")
+            log.error(f"Streaming error: {e}")
             yield {
                 "type": "error",
                 "error": str(e),
@@ -476,8 +486,11 @@ Guidelines for voice output:
         Yields:
             Streaming events including 'token' events for each chunk
         """
-        # Route the query first
-        route = self.router.route(query)
+        # Route the query first (use async with timeout from env)
+        if hasattr(self.router, 'route_async'):
+            route = await self.router.route_async(query)
+        else:
+            route = self.router.route(query)
         
         # Create session with route info
         session = self.registry.create_session(route.agent_type, query[:100])
@@ -570,11 +583,11 @@ Guidelines for voice output:
     
     async def shutdown(self):
         """Shutdown the orchestrator and cleanup all sessions."""
-        logger.info("Shutting down orchestrator...")
+        log.info("Shutting down...")
         
         # Destroy all active sessions
         for session in self.registry.list_sessions():
             await self.destroy_agent(session["session_id"])
         
         self._running = False
-        logger.info("Orchestrator shutdown complete")
+        log.info("Shutdown complete")

@@ -13,13 +13,8 @@ import inspect
 
 logger = logging.getLogger(__name__)
 
-# Try to import SDK tool decorator
-try:
-    from claude_agent_sdk import tool as sdk_tool, create_sdk_mcp_server
-    SDK_AVAILABLE = True
-except ImportError:
-    SDK_AVAILABLE = False
-    logger.debug("Claude Agent SDK not available, using fallback tool decorator")
+# Claude SDK compatibility layer
+from ..services.sdk_compat import tool as sdk_tool, create_sdk_mcp_server, CLAUDE_SDK_AVAILABLE as SDK_AVAILABLE
 
 
 @dataclass

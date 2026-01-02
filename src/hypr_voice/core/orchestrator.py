@@ -19,36 +19,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 
-# Claude SDK imports
-try:
-    from claude_agent_sdk import (
-        ClaudeSDKClient, 
-        ClaudeAgentOptions, 
-        tool, 
-        AssistantMessage,
-        TextBlock,
-        ResultMessage
-    )
-    CLAUDE_SDK_AVAILABLE = True
-    CLAUDE_SDK_MOCK = False
-except ImportError:
-    # Try mock implementation bundled with Hypr Voice
-    try:
-        from hypr_voice.services.claude_agent_sdk_mock import (
-            ClaudeSDKClient,
-            ClaudeAgentOptions,
-            tool,
-            AssistantMessage,
-            TextBlock,
-            ResultMessage,
-        )
-        CLAUDE_SDK_AVAILABLE = True
-        CLAUDE_SDK_MOCK = True
-        print("Warning: Using mock Claude SDK implementation")
-    except ImportError:
-        CLAUDE_SDK_AVAILABLE = False
-        CLAUDE_SDK_MOCK = False
-        print("Warning: Neither Claude SDK nor mock available")
+# Claude SDK compatibility layer
+from ..services.sdk_compat import (
+    ClaudeSDKClient,
+    ClaudeAgentOptions,
+    tool,
+    AssistantMessage,
+    TextBlock,
+    ResultMessage,
+    PermissionResultAllow,
+    PermissionResultDeny,
+    CLAUDE_SDK_AVAILABLE,
+    CLAUDE_SDK_MOCK,
+    create_sdk_mcp_server
+)
 
 # Import our Claude Code integration from services
 try:
@@ -127,6 +111,10 @@ class AgentConfig(BaseModel):
     model: str = "claude-3-5-sonnet-20241022"
     max_tokens: int = 8096
     temperature: float = 1.0
+    permission_mode: str = "default"
+    system_prompt: Optional[str] = None
+    setting_sources: List[str] = ["project"]
+    allowed_tools: List[str] = ["Read", "Write", "Edit", "Grep", "Glob", "Bash", "Skill", "SlashCommand"]
     skills: List[str] = []
     mcp_servers: List[str] = []
     custom_tools: List[str] = []
@@ -134,12 +122,16 @@ class AgentConfig(BaseModel):
     enable_monitoring: bool = True  # Enable Hyprland monitoring
     monitor_interval: float = 0.15  # Application context update interval
     use_claude_code: bool = True  # Use Claude Code SDK
+    capture_clipboard: bool = False  # Safety default: off
+    capture_terminal_history: bool = False  # Safety default: off
+    terminal_history_lines: int = 5
     parent_id: Optional[str] = None
     # TTS Agent Configuration
     enable_tts_agent: bool = False  # Use Claude TTS Agent
     tts_provider: str = "kokoro"  # kokoro, deepgram, elevenlabs
     tts_voice: Optional[str] = None  # Specific voice or None for default
     auto_synthesize: bool = True  # Auto-synthesize responses
+    permission_timeout: int = 30  # Timeout for permission requests in seconds
 
 
 # ============================================================================
@@ -446,6 +438,7 @@ class EnhancedAgent:
         self.subagents: Dict[str, 'EnhancedAgent'] = {}
         self.conversation_history: List[Dict] = []
         self.logger = logging.getLogger(f"Agent-{agent_id}")
+        self.permission_waiters: Dict[str, asyncio.Future] = {}
         
         # Ensure working directory exists
         self.working_dir = Path(config.working_directory)
@@ -489,7 +482,13 @@ class EnhancedAgent:
                     max_tokens=self.config.max_tokens,
                     temperature=self.config.temperature,
                     tools=tools,
-                    mcp_servers=mcp_servers
+                    mcp_servers=mcp_servers,
+                    permission_mode=self.config.permission_mode,
+                    working_directory=str(self.working_dir),
+                    system_prompt=self.config.system_prompt,
+                    setting_sources=self.config.setting_sources,
+                    allowed_tools=self.config.allowed_tools,
+                    can_use_tool=self._permission_callback if PermissionResultAllow else None,
                 )
                 
                 # Create Claude SDK client
@@ -514,6 +513,11 @@ class EnhancedAgent:
                 model=self.config.model,
                 max_tokens=self.config.max_tokens,
                 temperature=self.config.temperature,
+                permission_mode=self.config.permission_mode,
+                system_prompt=self.config.system_prompt,
+                setting_sources=self.config.setting_sources,
+                allowed_tools=self.config.allowed_tools,
+                can_use_tool=self._permission_callback if PermissionResultAllow else None,
                 tools=tools
             )
             
@@ -546,8 +550,10 @@ class EnhancedAgent:
                 enable_tts=True,
                 tts_provider=self.config.tts_provider,
                 tts_voice=self.config.tts_voice,
+                tts_voice=self.config.tts_voice,
                 working_directory=str(self.working_dir),
-                system_prompt="You are a helpful AI assistant with text-to-speech capabilities."
+                system_prompt="You are a helpful AI assistant with text-to-speech capabilities.",
+                use_local_claude=False
             )
             self.logger.info(f"TTS agent initialized with provider: {self.config.tts_provider}")
         except Exception as e:
@@ -579,15 +585,19 @@ class EnhancedAgent:
         )
         
         try:
+            # Build contextualized instruction
+            ctx_prefix = await self._build_context_prefix()
+            full_instruction = f"{ctx_prefix}\n\n{instruction}" if ctx_prefix else instruction
+            
             # Add to conversation history
             self.conversation_history.append({
                 "role": "user",
-                "content": instruction
+                "content": full_instruction
             })
             
             if self.claude_agent:
                 # Use Claude SDK
-                response = await self.claude_agent.run(instruction)
+                response = await self.claude_agent.run(full_instruction)
                 
                 # Stream response
                 if stream:
@@ -662,6 +672,145 @@ class EnhancedAgent:
                 EventType.VOICE_SYNTHESIS,
                 result
             )
+
+    async def _build_context_prefix(self) -> str:
+        """Collect contextual signals to prepend to user prompt."""
+        parts = []
+        
+        # Active application context from Claude Code monitor if available
+        app_ctx = None
+        if hasattr(self, "claude_agent") and getattr(self, "claude_agent", None):
+            app_ctx = getattr(self.claude_agent, "current_context", None)
+        if not app_ctx and CLAUDE_CODE_AVAILABLE:
+            try:
+                monitor = HyprlandMonitor(update_interval=self.config.monitor_interval)
+                window = await monitor.get_active_window()
+                if window:
+                    app_ctx = ApplicationContext(
+                        window_class=window.get("class", ""),
+                        window_title=window.get("title", ""),
+                        vocabulary=[]
+                    )
+            except Exception:
+                app_ctx = None
+        
+        if app_ctx:
+            parts.append(f"[Active Window] class={app_ctx.window_class} title={app_ctx.window_title}")
+            if app_ctx.vocabulary:
+                vocab_preview = ", ".join(app_ctx.vocabulary[:10])
+                parts.append(f"[Vocabulary] {vocab_preview}")
+        
+        # Clipboard text (optional)
+        if self.config.capture_clipboard:
+            clip = await self._get_clipboard_text()
+            if clip:
+                parts.append(f"[Clipboard] {clip[:500]}")
+        
+        # Terminal history (optional)
+        if self.config.capture_terminal_history:
+            history = self._get_recent_commands(self.config.terminal_history_lines)
+            if history:
+                parts.append("[Recent Commands]\n" + "\n".join(history))
+        
+        return "\n".join(parts)
+    
+    async def _permission_callback(self, tool_name: str, tool_input: dict, context: Any):
+        """
+        Permission callback for Claude Agent SDK.
+        Emits a permission request event and waits for user approval via WebSocket.
+        """
+        if not PermissionResultAllow:
+            return None
+        
+        request_id = str(uuid.uuid4())
+        loop = asyncio.get_running_loop()
+        fut: asyncio.Future = loop.create_future()
+        self.permission_waiters[request_id] = fut
+        
+        # Broadcast request
+        await self._emit_event(
+            EventType.TOOL_EXECUTION,
+            {
+                "type": "permission_request",
+                "request_id": request_id,
+                "tool_name": tool_name,
+                "tool_input": tool_input,
+                "agent_id": self.agent_id,
+            }
+        )
+        
+        try:
+            decision = await asyncio.wait_for(fut, timeout=self.config.permission_timeout)
+        except asyncio.TimeoutError:
+            return PermissionResultDeny(behavior="deny", message="Permission timed out", interrupt=False)
+        finally:
+            self.permission_waiters.pop(request_id, None)
+        
+        if not isinstance(decision, dict):
+            return PermissionResultDeny(behavior="deny", message="Invalid permission response", interrupt=False)
+        
+        approved = decision.get("allow", False)
+        updated_input = decision.get("updated_input")
+        if approved:
+            return PermissionResultAllow(behavior="allow", updated_input=updated_input)
+        return PermissionResultDeny(
+            behavior="deny",
+            message=decision.get("reason", "Denied by user"),
+            interrupt=False
+        )
+    
+    def receive_permission_response(self, request_id: str, allow: bool, updated_input: Optional[dict] = None, reason: str = ""):
+        """Handle permission response from client."""
+        fut = self.permission_waiters.get(request_id)
+        if fut and not fut.done():
+            fut.set_result({"allow": allow, "updated_input": updated_input, "reason": reason})
+    
+    async def _get_clipboard_text(self) -> Optional[str]:
+        """Read clipboard text using wl-paste or xclip."""
+        cmds = [
+            ["wl-paste", "-n"],
+            ["xclip", "-selection", "clipboard", "-o"]
+        ]
+        for cmd in cmds:
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+                )
+                out, _ = await proc.communicate()
+                if proc.returncode == 0:
+                    text = out.decode(errors="ignore").strip()
+                    if text:
+                        return text
+            except FileNotFoundError:
+                continue
+            except Exception:
+                continue
+        return None
+    
+    def _get_recent_commands(self, n: int) -> List[str]:
+        """Tail recent shell commands."""
+        history_paths = []
+        shell = os.getenv("SHELL", "")
+        home = Path.home()
+        if "zsh" in shell:
+            history_paths.append(home / ".zsh_history")
+        if "bash" in shell:
+            history_paths.append(home / ".bash_history")
+        history_paths.append(home / ".local/share/fish/fish_history")
+        
+        for path in history_paths:
+            if path.exists():
+                try:
+                    lines = path.read_text(errors="ignore").splitlines()
+                    if "fish_history" in str(path):
+                        # fish format: - cmd: ...
+                        cmds = [ln.split(": ", 1)[1] for ln in lines if ln.strip().startswith("- cmd:")]
+                    else:
+                        cmds = [ln for ln in lines if ln.strip()]
+                    return cmds[-n:] if len(cmds) >= n else cmds
+                except Exception:
+                    continue
+        return []
     
     async def _synthesize_with_tts_agent(self, text: str):
         """Synthesize speech using TTS agent"""
@@ -792,18 +941,26 @@ class AgentOrchestrator:
                 "model": "claude-3-5-sonnet-20241022",
                 "max_tokens": 8096,
                 "temperature": 1.0,
+                "permission_timeout": 30,
             },
         }
-    
+
     async def create_agent(self, config: AgentConfig) -> str:
         """Create a new agent"""
         agent_id = str(uuid.uuid4())
-        
+
         # Apply defaults from configuration
         if not config.model:
-            config.model = self.config["defaults"]["model"]
+            config.model = self.config.get("defaults", {}).get("model", "claude-3-5-sonnet-20241022")
         if not config.max_tokens:
-            config.max_tokens = self.config["defaults"]["max_tokens"]
+            config.max_tokens = self.config.get("defaults", {}).get("max_tokens", 8096)
+
+        # Load permission timeout from orchestrator section or defaults
+        if config.permission_timeout == 30:  # If still at default
+            config.permission_timeout = self.config.get("orchestrator", {}).get(
+                "permission_timeout",
+                self.config.get("defaults", {}).get("permission_timeout", 30)
+            )
         
         agent = EnhancedAgent(
             agent_id=agent_id,
@@ -981,6 +1138,19 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
             
             elif message.get("type") == "ping":
                 await websocket.send_json({"type": "pong", "client_id": client_id})
+            
+            elif message.get("type") == "permission_response":
+                request_id = message.get("request_id")
+                allow = bool(message.get("allow", False))
+                updated_input = message.get("updated_input")
+                reason = message.get("reason", "")
+                target_agent = message.get("agent_id")
+                agent = orchestrator.get_agent(target_agent) if target_agent else None
+                if agent and hasattr(agent, "receive_permission_response"):
+                    agent.receive_permission_response(request_id, allow, updated_input, reason)
+                    await websocket.send_json({"type": "permission_ack", "request_id": request_id})
+                else:
+                    await websocket.send_json({"type": "permission_error", "request_id": request_id, "error": "agent_not_found"})
             
     except WebSocketDisconnect:
         orchestrator.event_manager.disconnect(websocket, client_id)
