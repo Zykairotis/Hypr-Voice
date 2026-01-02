@@ -13,6 +13,7 @@ from .definitions import (
     create_agent,
     get_all_agents,
 )
+from .enhanced_context_agent import EnhancedContextAgent
 
 __all__ = [
     "AgentDefinition",
@@ -22,4 +23,5 @@ __all__ = [
     "VoiceAgent",
     "create_agent",
     "get_all_agents",
+    "EnhancedContextAgent",
 ]

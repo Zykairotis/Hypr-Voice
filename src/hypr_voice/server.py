@@ -15,12 +15,12 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Uplo
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 import tempfile
 import json
 
 from .orchestrator import HyprVoiceOrchestrator, OrchestratorConfig, VoiceOrchestrator, VoiceOrchestratorConfig
-from .agents import get_all_agents
+from .agents import get_all_agents, EnhancedContextAgent
 from .ipc import OrchestratorWebSocket
 
 # Configure logging
@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 # Global orchestrator instances
 orchestrator: Optional[HyprVoiceOrchestrator] = None
 voice_orchestrator: Optional[VoiceOrchestrator] = None
+enhanced_agent: Optional[EnhancedContextAgent] = None
 ws_server: Optional[OrchestratorWebSocket] = None
 
 
@@ -54,6 +55,14 @@ class VoiceProcessRequest(BaseModel):
     speak_response: bool = True
 
 
+class EnhancedProcessRequest(BaseModel):
+    """Request for enhanced context-aware processing."""
+    text: str
+    context: Dict[str, Any]  # {window: {...}, clipboard: str, timestamp: str}
+    conversation_id: Optional[str] = None
+    speak_response: bool = True
+
+
 class TTSSpeakRequest(BaseModel):
     text: str
     voice: Optional[str] = None
@@ -62,19 +71,19 @@ class TTSSpeakRequest(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
-    global orchestrator, voice_orchestrator, ws_server
-    
+    global orchestrator, voice_orchestrator, enhanced_agent, ws_server
+
     # Startup
     logger.info("Starting Hypr-Voice Orchestrator...")
-    
+
     config = OrchestratorConfig(
         model=os.getenv("HYPR_VOICE_MODEL", "claude-sonnet-4-5"),
         max_turns=int(os.getenv("HYPR_VOICE_MAX_TURNS", "20")),
         working_directory=os.getenv("HYPR_VOICE_WORKING_DIR"),
     )
-    
+
     orchestrator = HyprVoiceOrchestrator(config)
-    
+
     # Initialize voice orchestrator with TTS
     voice_config = VoiceOrchestratorConfig(
         tts_provider=os.getenv("HYPR_VOICE_TTS_PROVIDER", "deepgram"),
@@ -83,17 +92,32 @@ async def lifespan(app: FastAPI):
         save_to_file=True,
     )
     voice_orchestrator = VoiceOrchestrator(voice_config)
-    
+
+    # Initialize enhanced context agent
+    try:
+        enhanced_agent = EnhancedContextAgent(
+            model=os.getenv("ENHANCED_AGENT_MODEL", "claude-sonnet-4-5"),
+            max_turns=int(os.getenv("ENHANCED_AGENT_MAX_TURNS", "5")),
+            working_directory=os.getenv("CLAUDE_SDK_WORKING_DIR", os.getcwd()),
+        )
+        logger.info("Enhanced Context Agent initialized successfully")
+    except Exception as e:
+        logger.warning(f"Enhanced Context Agent initialization failed: {e}")
+        logger.warning("Enhanced mode will be unavailable")
+        enhanced_agent = None
+
     logger.info("Orchestrator started successfully")
-    
+
     yield
-    
+
     # Shutdown
     logger.info("Shutting down orchestrator...")
     if orchestrator:
         await orchestrator.shutdown()
     if voice_orchestrator:
         await voice_orchestrator.shutdown()
+    if enhanced_agent:
+        await enhanced_agent.shutdown()
     if ws_server:
         await ws_server.stop()
     logger.info("Shutdown complete")
@@ -337,8 +361,111 @@ async def voice_speak(request: TTSSpeakRequest):
                 "Accept-Ranges": "bytes"
             }
         )
-    
+
     return result
+
+
+@app.post("/voice/process/enhanced")
+async def voice_process_enhanced(request: EnhancedProcessRequest):
+    """
+    Process text with enhanced context awareness using Claude Agent SDK.
+
+    This endpoint provides:
+    - Full context awareness (active window, clipboard, workspace, etc.)
+    - Claude SDK with custom Hyprland tools
+    - Session persistence for conversation continuity
+    - TTS spoken responses
+    - Intelligent, context-specific assistance
+
+    Request body:
+    {
+        "text": "user query",
+        "context": {
+            "window": {"class": "...", "title": "...", "workspace": {...}},
+            "clipboard": "clipboard content",
+            "timestamp": "ISO timestamp"
+        },
+        "conversation_id": "optional-for-follow-ups",
+        "speak_response": true
+    }
+
+    Returns:
+    {
+        "success": true,
+        "response_text": "AI response",
+        "conversation_id": "uuid-for-follow-ups",
+        "audio_file": "/path/to/audio.wav",
+        "context_used": true,
+        "agent_type": "enhanced-context",
+        "tools_used": ["tool1", "tool2"]
+    }
+    """
+    if not enhanced_agent:
+        raise HTTPException(
+            status_code=503,
+            detail="Enhanced Context Agent not available. Check server logs for initialization errors."
+        )
+
+    if not voice_orchestrator:
+        raise HTTPException(status_code=503, detail="Voice orchestrator not initialized")
+
+    try:
+        # Process with enhanced agent
+        response_text = ""
+        conversation_id = request.conversation_id
+        tools_used = []
+
+        async for chunk in enhanced_agent.process(
+            request.text,
+            request.context,
+            conversation_id,
+            request.speak_response
+        ):
+            chunk_type = chunk.get("type")
+
+            if chunk_type == "text":
+                response_text += chunk.get("content", "")
+            elif chunk_type == "conversation_id":
+                conversation_id = chunk.get("id")
+            elif chunk_type == "tool_use":
+                tool_name = chunk.get("tool", "")
+                if tool_name and tool_name not in tools_used:
+                    tools_used.append(tool_name)
+            elif chunk_type == "error":
+                logger.error(f"Enhanced agent error: {chunk.get('content')}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Enhanced agent error: {chunk.get('content')}"
+                )
+
+        # Speak response if requested
+        audio_file = None
+        if request.speak_response and response_text:
+            try:
+                tts_result = await voice_orchestrator.speak(response_text)
+                if tts_result.get("success"):
+                    audio_file = tts_result.get("audio_file")
+            except Exception as e:
+                logger.warning(f"TTS generation failed: {e}")
+                # Don't fail the request if TTS fails
+
+        return {
+            "success": True,
+            "response_text": response_text,
+            "conversation_id": conversation_id,
+            "audio_file": audio_file,
+            "context_used": True,
+            "agent_type": "enhanced-context",
+            "tools_used": tools_used,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        logger.error(f"Enhanced processing error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/voice/conversations")
