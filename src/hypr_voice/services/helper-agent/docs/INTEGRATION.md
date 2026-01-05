@@ -6,7 +6,7 @@ This guide covers how to integrate the Helper Agent service with various systems
 
 - [Quick Start Integration](#quick-start-integration)
 - [Hypr-Voice Integration](#hypr-voice-integration)
-- [Claude Code SDK Integration](#claude-code-sdk-integration)
+- [Claude Agent SDK Integration](#claude-agent-sdk-integration)
 - [Web Application Integration](#web-application-integration)
 - [CLI Tool Integration](#cli-tool-integration)
 - [Advanced Integration Patterns](#advanced-integration-patterns)
@@ -144,18 +144,18 @@ class RealTimeVoiceProcessor:
         })
 ```
 
-## Claude Code SDK Integration
+## Claude Agent SDK Integration
 
 ### Tool Bridge Integration
 
 ```python
 from helper_agent import HelperAgent
-from claude_code_sdk import ClaudeClient
+from claude_agent_sdk import ClaudeSDKClient
 
 class ClaudeHelperBridge:
     def __init__(self):
         self.helper_agent = HelperAgent()
-        self.claude_client = ClaudeClient()
+        self.claude_client = ClaudeSDKClient()
 
     async def process_voice_request(self, voice_input, context):
         """Process voice input and bridge to Claude SDK."""
@@ -170,9 +170,7 @@ class ClaudeHelperBridge:
             return translation
 
         # Execute Claude command
-        claude_response = await self.claude_client.execute(
-            command=translation["claude_command"]
-        )
+        claude_response = await self.claude_client.run(translation["claude_command"])
 
         # Format response for voice output
         voice_response = await self.helper_agent.format_for_claude_sdk(

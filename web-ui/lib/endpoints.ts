@@ -9,6 +9,8 @@ const ORCHESTRATOR_URL = stripTrailingSlash(
 );
 const BRIDGE_WS = BRIDGE_URL.replace(/^http/, "ws");
 const ORCHESTRATOR_WS = ORCHESTRATOR_URL.replace(/^http/, "ws");
+const OBS_HTTP = process.env.NEXT_PUBLIC_OBS_HTTP ? stripTrailingSlash(process.env.NEXT_PUBLIC_OBS_HTTP) : "";
+const OBS_WS = process.env.NEXT_PUBLIC_OBS_WS || (OBS_HTTP ? OBS_HTTP.replace(/^http/, "ws") : "");
 
 const DEFAULT_CONTEXT_WS = process.env.NEXT_PUBLIC_CONTEXT_WS || "ws://localhost:9091/ws";
 const DEFAULT_ORCHESTRATOR_WS = process.env.NEXT_PUBLIC_ORCHESTRATOR_WS || `${ORCHESTRATOR_WS}/ws`;
@@ -24,6 +26,7 @@ export const endpoints = {
     context: DEFAULT_CONTEXT_WS,
     orchestrator: DEFAULT_ORCHESTRATOR_WS,
     bridge: `${BRIDGE_WS}/ws/orchestrator`,
+    observability: OBS_WS || undefined,
   },
   api: {
     whisperStatus: apiPath("/api/whisper/status"),
@@ -33,6 +36,7 @@ export const endpoints = {
     orchestratorQuery: apiPath("/api/orchestrator/query"),
     orchestratorSpawn: apiPath("/api/orchestrator/spawn"),
     agentStatus: apiPath("/api/agent/status"),
+    observabilityEvents: OBS_HTTP ? `${OBS_HTTP}/events` : undefined,
     voice: {
       conversations: apiPath("/api/voice/conversations"),
       conversation: (id: string) => apiPath(`/api/voice/conversations/${id}`),

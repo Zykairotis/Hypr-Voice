@@ -9,10 +9,13 @@ import queue
 import asyncio
 import logging
 import json
+from datetime import datetime
 from typing import Optional, Dict, List
 from io import BytesIO
 import tempfile
 import shutil
+import aiohttp
+import torch
 
 import numpy as np
 import uvicorn
@@ -66,6 +69,9 @@ MODEL_CONFIG = CONFIG.get('model', {})
 CTRANSLATE_CONFIG = CONFIG.get('ctranslate2', {})
 HYBRID_CONFIG = CONFIG.get('hybrid', {})
 API_CONFIG = CONFIG.get('api', {})
+OBS_URL = os.getenv("CLAUDE_HOOKS_OBS_URL", "")
+OBS_ENABLED = os.getenv("CLAUDE_HOOKS_ENABLED", "0") == "1" and bool(OBS_URL)
+OBS_SOURCE = os.getenv("CLAUDE_HOOKS_SOURCE_APP", "hypr-voice")
 
 HOST = SERVER_CONFIG.get('host', 'localhost')
 PORT = SERVER_CONFIG.get('port', 9099)
@@ -150,6 +156,22 @@ model = None
 active_sessions = {}
 last_gc_time = time.time()
 GC_INTERVAL = 10
+
+# Observability helper (non-blocking)
+async def emit_event(event_type: str, payload: dict):
+    if not OBS_ENABLED:
+        return
+    data = {
+        "source_app": OBS_SOURCE,
+        "event_type": event_type,
+        "payload": payload,
+        "ts": datetime.utcnow().isoformat(),
+    }
+    try:
+        async with aiohttp.ClientSession() as session:
+            await session.post(OBS_URL, json=data, timeout=3)
+    except Exception as e:
+        logger.debug(f"Obs emit failed: {e}")
 
 # ============================================================================
 # UTILITY FUNCTIONS
@@ -799,11 +821,19 @@ async def monitor_window_changes():
                 if window_signature != last_window_signature:
                     cached_window_info = window_info
                     last_window_signature = window_signature
-                    
+
                     # Log window change
                     app_class = window_info.get('class', '') or window_info.get('initialClass', '')
                     app_title = window_info.get('title', '') or window_info.get('initialTitle', '')
-                    logger.debug(f"Window changed: {app_class} - {app_title}")
+                    logger.info(f"🔄 Window changed: {app_class} - {app_title}")
+
+                    # Update vocabulary immediately when window changes
+                    if vocabulary_manager:
+                        try:
+                            vocabulary_manager.update_vocabulary(app_class, app_title)
+                            logger.info(f"✅ Vocabulary updated for {app_class} ({len(vocabulary_manager.active_keywords)} terms)")
+                        except Exception as e:
+                            logger.error(f"Error updating vocabulary on window change: {e}")
             
             await asyncio.sleep(0.1)  # 100ms update rate
             
@@ -894,6 +924,8 @@ async def create_session(request: TranscriptionRequest = TranscriptionRequest())
     session.start(model)
     active_sessions[session_id] = session
     cleanup_sessions()
+
+    await emit_event("WHISPER_SESSION_START", {"session_id": session_id, "language": session.language})
     
     return TranscriptionResponse(
         session_id=session_id,
@@ -951,6 +983,7 @@ async def delete_session(session_id: str):
     
     del active_sessions[session_id]
     gc.collect()
+    await emit_event("WHISPER_SESSION_END", {"session_id": session_id, "text": session.text})
     
     return response
 

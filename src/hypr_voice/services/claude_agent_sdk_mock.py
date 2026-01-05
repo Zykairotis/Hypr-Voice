@@ -115,6 +115,7 @@ class PermissionResultDeny:
     """Deny tool execution"""
     behavior: str = "deny"
     message: Optional[str] = None
+    interrupt: bool = False
 
 
 # Options and configuration

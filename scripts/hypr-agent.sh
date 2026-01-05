@@ -16,7 +16,16 @@ ORCHESTRATOR_PORT="${HYPR_AGENT_PORT:-9093}"
 WHISPER_PORT="${HYPR_WHISPER_PORT:-9099}"
 RECORDING_FLAG="/tmp/hypr-agent-recording"
 AUDIO_FILE="/tmp/hypr-agent-audio.wav"
-LOG_FILE="/tmp/hypr-agent.log"
+
+# LogGurl: Centralized logging - all logs go to same location
+LOG_DIR="${HYPR_VOICE_LOG_DIR:-/tmp/hypr-voice}"
+mkdir -p "$LOG_DIR"
+LOG_FILE="$LOG_DIR/hypr-voice.log"
+# Persist conversation id to maintain context across prompts (e.g., permission follow-ups)
+CONV_FILE="/tmp/hypr-agent-conv-id"
+# Allow long LLM + TTS streams; override with HYPR_AGENT_TIMEOUT (seconds)
+# Increase default to 300s to avoid premature timeout on long multi-agent replies
+AGENT_TIMEOUT="${HYPR_AGENT_TIMEOUT:-300}"
 
 # Audio source - use env var or read from config.yaml
 WHISPER_CONFIG="$PROJECT_DIR/src/Hypr-Whisper/config/config.yaml"
@@ -32,22 +41,26 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Logging with timestamps to file and stdout
+# LogGurl-compatible logging with timestamps
+# Format: HH:MM:SS.mmm [       agent] [LEVEL] message
 log() {
-    local msg="[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] $1"
-    echo -e "${GREEN}[hypr-agent]${NC} $1"
+    local ts=$(date '+%H:%M:%S.%3N' 2>/dev/null || date '+%H:%M:%S.000')
+    local msg="$ts [       agent] [ INFO] $1"
+    echo -e "${GREEN}[agent]${NC} $1"
     echo "$msg" >> "$LOG_FILE"
 }
 
 warn() {
-    local msg="[$(date '+%Y-%m-%d %H:%M:%S')] [WARN] $1"
-    echo -e "${YELLOW}[hypr-agent]${NC} $1"
+    local ts=$(date '+%H:%M:%S.%3N' 2>/dev/null || date '+%H:%M:%S.000')
+    local msg="$ts [       agent] [ WARN] $1"
+    echo -e "${YELLOW}[agent]${NC} $1"
     echo "$msg" >> "$LOG_FILE"
 }
 
 error() {
-    local msg="[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $1"
-    echo -e "${RED}[hypr-agent]${NC} $1" >&2
+    local ts=$(date '+%H:%M:%S.%3N' 2>/dev/null || date '+%H:%M:%S.000')
+    local msg="$ts [       agent] [ERROR] $1"
+    echo -e "${RED}[agent]${NC} $1" >&2
     echo "$msg" >> "$LOG_FILE"
 }
 
@@ -87,22 +100,89 @@ send_to_orchestrator() {
         
         # Use voice/process endpoint for full pipeline with TTS response
         local response
+
+        # Reuse last conversation id to keep context if available
+        local conv_id=""
+        if [[ -f "$CONV_FILE" ]]; then
+            conv_id=$(cat "$CONV_FILE" 2>/dev/null || true)
+        fi
+
+        # Build JSON payload safely
+        local payload
+        if [[ -n "$conv_id" ]]; then
+            payload=$(jq -nc --arg text "$query" --arg conv "$conv_id" '{text:$text, speak_response:true, conversation_id:$conv}')
+            log ">>> Request: conv_id=${conv_id:0:8}... (continuing)"
+        else
+            payload=$(jq -nc --arg text "$query" '{text:$text, speak_response:true}')
+            log ">>> Request: new conversation"
+        fi
+
+        log ">>> Calling /voice/process (timeout=${AGENT_TIMEOUT}s)..."
+        local start_time end_time duration
+        start_time=$(date +%s%3N 2>/dev/null || echo "0")
+        
         response=$(curl -s -X POST "http://localhost:$ORCHESTRATOR_PORT/voice/process" \
             -H "Content-Type: application/json" \
-            -d "{\"text\": \"$query\", \"speak_response\": true}" \
-            --max-time 60)
+            -d "$payload" \
+            --max-time "$AGENT_TIMEOUT" 2>&1)
         
-        if [[ -n "$response" ]]; then
-            # Extract response text
-            local response_text
-            response_text=$(echo "$response" | jq -r '.response_text // empty')
-            local agent_type
-            agent_type=$(echo "$response" | jq -r '.agent_type // "unknown"')
-            
-            log "Agent ($agent_type): $response_text"
-            return 0
+        local curl_exit=$?
+        end_time=$(date +%s%3N 2>/dev/null || echo "0")
+        duration=$((end_time - start_time))
+        
+        if [[ $curl_exit -ne 0 ]]; then
+            error ">>> curl failed with exit code $curl_exit after ${duration}ms"
+            return 1
         fi
-        return 1
+        
+        if [[ -z "$response" ]]; then
+            error ">>> Empty response from orchestrator after ${duration}ms"
+            return 1
+        fi
+        
+        # Check for error response
+        local error_msg
+        error_msg=$(echo "$response" | jq -r '.detail // .error // empty' 2>/dev/null)
+        if [[ -n "$error_msg" ]]; then
+            error ">>> Orchestrator error: $error_msg"
+            return 1
+        fi
+        
+        # Extract all response fields
+        local response_text agent_type audio_file input_text routing_info tts_success
+        response_text=$(echo "$response" | jq -r '.response_text // empty' 2>/dev/null)
+        agent_type=$(echo "$response" | jq -r '.agent_type // "unknown"' 2>/dev/null)
+        audio_file=$(echo "$response" | jq -r '.audio_file // empty' 2>/dev/null)
+        input_text=$(echo "$response" | jq -r '.input_text // empty' 2>/dev/null)
+        
+        # Log detailed response breakdown
+        log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        log "<<< RESPONSE (${duration}ms total)"
+        log "    Agent: $agent_type"
+        log "    Response: ${#response_text} chars"
+        if [[ -n "$audio_file" ]]; then
+            log "    TTS: $audio_file"
+        else
+            log "    TTS: streamed (no file saved)"
+        fi
+        
+        # Show truncated response text
+        if [[ ${#response_text} -gt 200 ]]; then
+            log "    Text: ${response_text:0:200}..."
+        else
+            log "    Text: $response_text"
+        fi
+        log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+        # Persist conversation id for follow-up prompts
+        local new_conv_id
+        new_conv_id=$(echo "$response" | jq -r '.conversation_id // empty' 2>/dev/null)
+        if [[ -n "$new_conv_id" ]]; then
+            echo "$new_conv_id" > "$CONV_FILE"
+            log "    Conversation: $new_conv_id (saved for context)"
+        fi
+        
+        return 0
     else
         # For other actions, use the regular query endpoint
         local response
@@ -128,7 +208,8 @@ start_recording() {
     # Create recording flag
     touch "$RECORDING_FLAG"
     
-    # TODO: play_sound "start"
+    # Play cue so user knows capture began (reuses query-in sound)
+    play_sound "query-in"
     
     # Use configured audio source from config.yaml or env var
     log "Using audio source: $AUDIO_SOURCE"
@@ -165,14 +246,16 @@ transcribe_audio() {
     
     # Helper for logging within this function (stderr only to avoid capturing in output)
     _tlog() {
-        local msg="[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] $1"
+        local ts=$(date '+%H:%M:%S.%3N' 2>/dev/null || date '+%H:%M:%S.000')
+        local msg="$ts [     whisper] [ INFO] $1"
         echo "$msg" >> "$LOG_FILE"
-        echo -e "${GREEN}[hypr-agent]${NC} $1" >&2
+        echo -e "${GREEN}[whisper]${NC} $1" >&2
     }
     _terr() {
-        local msg="[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $1"
+        local ts=$(date '+%H:%M:%S.%3N' 2>/dev/null || date '+%H:%M:%S.000')
+        local msg="$ts [     whisper] [ERROR] $1"
         echo "$msg" >> "$LOG_FILE"
-        echo -e "${RED}[hypr-agent]${NC} $1" >&2
+        echo -e "${RED}[whisper]${NC} $1" >&2
     }
     
     if [[ ! -f "$audio_path" ]]; then
@@ -212,6 +295,9 @@ transcribe_audio() {
     
     # Step 2: Upload audio file for transcription
     _tlog "Uploading audio to Whisper..."
+    local transcribe_start_ms
+    # Milliseconds timestamp (GNU date)
+    transcribe_start_ms=$(date +%s%3N 2>/dev/null || date +%s000)
     local upload_response
     upload_response=$(curl -s -X POST "http://localhost:$WHISPER_PORT/sessions/$session_id/transcribe" \
         -F "audio_file=@$audio_path" \
@@ -226,7 +312,7 @@ transcribe_audio() {
     local status_response=""
     
     while [[ $attempt -lt $max_attempts ]]; do
-        sleep 0.5
+        sleep 1
         
         status_response=$(curl -s "http://localhost:$WHISPER_PORT/sessions/$session_id" \
             --max-time 5)
@@ -234,8 +320,8 @@ transcribe_audio() {
         local status
         status=$(echo "$status_response" | jq -r '.status // empty' 2>/dev/null)
         final_text=$(echo "$status_response" | jq -r '.final_text // empty' 2>/dev/null)
-        
-        _tlog "Poll attempt $attempt: status=$status, text='$final_text'"
+        local elapsed_ms=$(( $(date +%s%3N) - transcribe_start_ms ))
+        _tlog "Poll attempt $attempt: status=$status, text='$final_text', elapsed=${elapsed_ms}ms"
         
         if [[ "$status" == "completed" ]] || [[ -n "$final_text" ]]; then
             break

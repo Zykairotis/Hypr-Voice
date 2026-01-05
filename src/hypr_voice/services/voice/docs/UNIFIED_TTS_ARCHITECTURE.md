@@ -164,18 +164,18 @@ async for audio_chunk in manager.stream_from_llm(
     pass
 ```
 
-### With Claude Code SDK Integration
+### With Claude Agent SDK Integration
 
 ```python
-from claude_code_sdk import ClaudeCodeSDK  # When available
+from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions
 from services.voice import UnifiedVoiceManager
 
 manager = UnifiedVoiceManager()
-claude = ClaudeCodeSDK()
+claude = ClaudeSDKClient(ClaudeAgentOptions())
 
 # Direct streaming from Claude to TTS
 async for audio in manager.stream_from_llm(
-    claude.generate_response("Tell me a story"),
+    claude.run("Tell me a story"),
     provider="elevenlabs"
 ):
     # Real-time audio generation

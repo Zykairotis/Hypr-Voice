@@ -20,13 +20,22 @@ from loguru import logger
 from window_backends import detect_backend
 import hook_bus
 
-# Import ContextManager
+# Import ContextManager (basic)
 try:
     from context_manager import ContextManager
     HAVE_CONTEXT_MANAGER = True
 except ImportError:
     HAVE_CONTEXT_MANAGER = False
     logger.warning("ContextManager not available, context extraction will be disabled")
+
+# Import EnhancedContextManager (new ultra-fast system)
+try:
+    from enhanced_context_manager import EnhancedContextManager, get_enhanced_context_manager
+    HAVE_ENHANCED_CONTEXT = True
+    logger.info("Enhanced Context Manager available")
+except ImportError:
+    HAVE_ENHANCED_CONTEXT = False
+    logger.info("Enhanced Context Manager not available, will use basic system")
 
 try:
     import psutil
@@ -63,11 +72,30 @@ class VocabularyManager:
         self.current_backend: Optional[str] = None
         self.active_keywords: Set[str] = set()
 
-        # Initialize ContextManager
-        if HAVE_CONTEXT_MANAGER:
+        # Check if enhanced system should be used
+        use_enhanced = os.environ.get('HYPR_VOICE_ENHANCED_CONTEXT', '').lower() in ('true', '1', 'yes')
+
+        # Initialize ContextManager (basic or enhanced)
+        if use_enhanced and HAVE_ENHANCED_CONTEXT:
+            try:
+                self.context_manager = get_enhanced_context_manager(str(self.config_dir))
+                self._use_enhanced = True
+                logger.info("✅ Using Enhanced Context Manager (ultra-fast, 5 data sources)")
+            except Exception as e:
+                logger.warning(f"Failed to initialize enhanced context manager: {e}")
+                if HAVE_CONTEXT_MANAGER:
+                    self.context_manager = ContextManager()
+                    self._use_enhanced = False
+                else:
+                    self.context_manager = None
+                    self._use_enhanced = False
+        elif HAVE_CONTEXT_MANAGER:
             self.context_manager = ContextManager()
+            self._use_enhanced = False
+            logger.info("Using Basic Context Manager (3 data sources)")
         else:
             self.context_manager = None
+            self._use_enhanced = False
 
         # Load configurations
         self.load_configurations()
@@ -275,13 +303,25 @@ class VocabularyManager:
         # Add context-aware keywords from shell history and clipboard
         if self.context_manager:
             try:
-                commands = self.context_manager.get_shell_history(40)
-                clipboard = self.context_manager.get_clipboard_history(5)
-                context_vocab = self.context_manager.extract_vocabulary_from_context(
-                    commands, clipboard
-                )
-                keywords.update(context_vocab)
-                logger.debug(f"Added {len(context_vocab)} context-aware keywords")
+                if self._use_enhanced:
+                    # Use enhanced context manager (ultra-fast, 5 data sources)
+                    result = self.context_manager.extract_comprehensive_vocabulary()
+                    enhanced_vocab = result.get('vocabulary', [])
+                    keywords.update(enhanced_vocab)
+                    logger.info(
+                        f"Added {len(enhanced_vocab)} enhanced keywords "
+                        f"from {len(result.get('sources', {}))} sources "
+                        f"in {result.get('extraction_time_ms', 0):.2f}ms"
+                    )
+                else:
+                    # Use basic context manager (original system)
+                    commands = self.context_manager.get_shell_history(40)
+                    clipboard = self.context_manager.get_clipboard_history(5)
+                    context_vocab = self.context_manager.extract_vocabulary_from_context(
+                        commands, clipboard
+                    )
+                    keywords.update(context_vocab)
+                    logger.debug(f"Added {len(context_vocab)} basic context-aware keywords")
             except Exception as e:
                 logger.error(f"Error getting context-aware keywords: {e}")
 
@@ -440,12 +480,18 @@ class VocabularyManager:
         # 2. Context keywords (shell history, clipboard)
         if self.context_manager:
             try:
-                context_vocab = self.context_manager.get_shell_history(40)
-                context_keywords = self.context_manager.extract_vocabulary_from_context(
-                    context_vocab, 
-                    self.context_manager.get_clipboard_history(5)
-                )
-                prioritized.extend(list(context_keywords)[:15])  # Top 15 context terms
+                if self._use_enhanced:
+                    # Enhanced manager: already extracted in _get_active_keywords
+                    # Skip duplicate extraction
+                    pass
+                else:
+                    # Basic manager: extract vocabulary
+                    context_vocab = self.context_manager.get_shell_history(40)
+                    context_keywords = self.context_manager.extract_vocabulary_from_context(
+                        context_vocab,
+                        self.context_manager.get_clipboard_history(5)
+                    )
+                    prioritized.extend(list(context_keywords)[:15])  # Top 15 context terms
             except Exception as e:
                 logger.debug(f"Error getting context keywords: {e}")
         

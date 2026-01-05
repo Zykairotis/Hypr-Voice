@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Install Claude SDK and set up integration
-# This script installs the Claude Code SDK and configures the integration
+# Install Claude Agent SDK and set up integration
+# This script installs the Claude Agent SDK and configures the integration
 
 set -e
 
@@ -21,7 +21,7 @@ HYPR_VOICE_STATE_DIR="$PROJECT_ROOT/var/hypr_voice"
 HYPR_VOICE_REQUIREMENTS="$PROJECT_ROOT/requirements/hypr_voice.txt"
 
 echo -e "${BLUE}═══════════════════════════════════════════════════════${NC}"
-echo -e "${BLUE}        Claude Code SDK Installation Script${NC}"
+echo -e "${BLUE}        Claude Agent SDK Installation Script${NC}"
 echo -e "${BLUE}═══════════════════════════════════════════════════════${NC}"
 echo
 
@@ -38,7 +38,7 @@ source "$VENV_PATH/bin/activate"
 
 # Install Claude SDK
 echo -e "${BLUE}→ Installing Claude Agent SDK...${NC}"
-pip install claude-agent-sdk==0.2.1
+pip install claude-agent-sdk==0.1.10
 
 # Check if installation was successful
 if python -c "import claude_agent_sdk" 2>/dev/null; then

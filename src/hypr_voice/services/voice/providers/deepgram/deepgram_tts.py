@@ -53,10 +53,35 @@ class DeepgramTTS:
         """
         logger.info(f"[DeepgramTTS.generate] text_len={len(text)}, voice={voice}, streaming={use_streaming}, auto_play={auto_play}")
         logger.info(f"[DeepgramTTS.generate] API key present: {bool(self.api_key)}")
+        played_audio = False
+
+        # Prefer non-streaming by default; only use HTTP streaming when explicitly requested
         if use_streaming and auto_play:
-            return await self._generate_streaming(text, voice)
-        else:
-            return await self._generate_non_streaming(text, voice)
+            result = await self._generate_streaming(text, voice)
+            result["streaming"] = True
+            return result
+
+        # Non-streaming path (fetch full audio first)
+        result = await self._generate_non_streaming(text, voice)
+        result["streaming"] = False
+
+        # Optional auto-play even in non-streaming mode
+        if auto_play and result.get("audio_data"):
+            try:
+                # Play on a background thread to avoid blocking the event loop
+                from hypr_voice.services.voice.audio_player import play_audio_blocking
+                await asyncio.to_thread(
+                    play_audio_blocking,
+                    result["audio_data"],
+                    result.get("sample_rate", self.config.sample_rate),
+                )
+                played_audio = True
+            except Exception as e:
+                logger.warning(f"[DeepgramTTS.generate] Auto-play failed, trying ffplay fallback: {e}")
+                played_audio = await asyncio.to_thread(self._play_with_ffplay, result["audio_data"])
+
+        result["played"] = played_audio
+        return result
     
     async def _generate_streaming(self, text: str, voice: str) -> Dict[str, Any]:
         """Generate with HTTP streaming and real-time playback"""
@@ -234,6 +259,31 @@ class DeepgramTTS:
         except Exception as e:
             logger.error(f"Deepgram TTS failed: {e}")
             raise
+
+    def _play_with_ffplay(self, audio_data: bytes) -> bool:
+        """Best-effort playback of a WAV/PCM blob using ffplay."""
+        player_command = [
+            "ffplay",
+            "-autoexit",
+            "-nodisp",
+            "-loglevel", "error",
+            "-"
+        ]
+        try:
+            proc = subprocess.Popen(
+                player_command,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            if proc.stdin:
+                proc.stdin.write(audio_data)
+                proc.stdin.close()
+            proc.wait(timeout=15)
+            return True
+        except Exception as e:
+            logger.error(f"[DeepgramTTS._play_with_ffplay] Failed: {e}")
+            return False
     
     async def close(self):
         """Cleanup (no persistent connection for Deepgram)"""

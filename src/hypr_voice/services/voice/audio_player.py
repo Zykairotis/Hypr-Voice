@@ -2,11 +2,10 @@
 """
 Real-time Audio Player for Streaming TTS
 
-Provides low-latency audio playback using a queue-based architecture.
-Audio chunks are played immediately as they arrive, enabling instant
-voice response while LLM is still generating.
+Based on Deepgram's recommended implementation for WebSocket TTS streaming.
+Uses PyAudio with queue-based architecture for smooth, continuous playback.
 
-Supports both sounddevice (preferred) and pyaudio backends.
+Reference: https://developers.deepgram.com/docs/send-llm-outputs-to-the-tts-web-socket
 """
 
 import asyncio
@@ -19,11 +18,12 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
-# Audio configuration defaults
+# Audio configuration defaults (matching Deepgram recommendations)
 DEFAULT_SAMPLE_RATE = 48000
 DEFAULT_CHANNELS = 1
-DEFAULT_CHUNK_SIZE = 8000
-QUEUE_TIMEOUT = 0.050  # 50ms
+DEFAULT_CHUNK_SIZE = 4800  # 100ms of audio at 48kHz (reduced for smoother playback)
+QUEUE_TIMEOUT = 0.010  # 10ms - reduced for lower latency
+SILENCE_ON_UNDERRUN = True  # Write silence instead of gaps to prevent crackling
 
 
 @dataclass 
@@ -39,8 +39,8 @@ class AudioPlayer:
     """
     Queue-based audio player for real-time streaming playback.
     
-    Audio chunks are queued and played in a background thread,
-    allowing the main thread to continue processing while audio plays.
+    Based on Deepgram's Speaker class implementation for reliable
+    streaming audio playback without crackling or dropouts.
     
     Usage:
         player = AudioPlayer(sample_rate=48000)
@@ -72,6 +72,7 @@ class AudioPlayer:
         self._thread: Optional[threading.Thread] = None
         self._stream = None
         self._backend = None
+        self._pyaudio_instance = None
         
     def start(self) -> bool:
         """
@@ -87,20 +88,51 @@ class AudioPlayer:
         self._stop_event.clear()
         self._queue = queue.Queue()
         
-        # Try sounddevice first, then pyaudio
-        if self._init_sounddevice():
-            self._backend = "sounddevice"
-        elif self._init_pyaudio():
+        # Use PyAudio (Deepgram's recommended backend)
+        if self._init_pyaudio():
             self._backend = "pyaudio"
+        elif self._init_sounddevice():
+            self._backend = "sounddevice"
         else:
-            logger.error("No audio backend available (install sounddevice or pyaudio)")
+            logger.error("No audio backend available (install pyaudio or sounddevice)")
             return False
             
         logger.info(f"Audio player started with {self._backend} backend")
         return True
     
+    def _init_pyaudio(self) -> bool:
+        """Initialize pyaudio backend (Deepgram recommended)."""
+        try:
+            import pyaudio
+            
+            self._pyaudio_instance = pyaudio.PyAudio()
+            self._stream = self._pyaudio_instance.open(
+                format=pyaudio.paInt16,
+                channels=self.config.channels,
+                rate=self.config.sample_rate,
+                input=False,
+                output=True,
+                frames_per_buffer=self.config.chunk_size,
+                output_device_index=self.config.output_device,
+            )
+            
+            # Start playback thread
+            self._thread = threading.Thread(target=self._pyaudio_loop, daemon=True)
+            self._thread.start()
+            
+            # Start the stream
+            self._stream.start_stream()
+            return True
+            
+        except ImportError:
+            logger.debug("pyaudio not available")
+            return False
+        except Exception as e:
+            logger.debug(f"pyaudio init failed: {e}")
+            return False
+    
     def _init_sounddevice(self) -> bool:
-        """Initialize sounddevice backend."""
+        """Initialize sounddevice backend (fallback)."""
         try:
             import sounddevice as sd
             import numpy as np
@@ -129,54 +161,11 @@ class AudioPlayer:
             logger.debug(f"sounddevice init failed: {e}")
             return False
     
-    def _init_pyaudio(self) -> bool:
-        """Initialize pyaudio backend."""
-        try:
-            import pyaudio
-            
-            self._pyaudio = pyaudio.PyAudio()
-            self._stream = self._pyaudio.open(
-                format=pyaudio.paInt16,
-                channels=self.config.channels,
-                rate=self.config.sample_rate,
-                output=True,
-                frames_per_buffer=self.config.chunk_size,
-                output_device_index=self.config.output_device,
-            )
-            
-            # Start playback thread
-            self._thread = threading.Thread(target=self._pyaudio_loop, daemon=True)
-            self._thread.start()
-            return True
-            
-        except ImportError:
-            logger.debug("pyaudio not available")
-            return False
-        except Exception as e:
-            logger.debug(f"pyaudio init failed: {e}")
-            return False
-    
-    def _sounddevice_loop(self):
-        """Playback loop using sounddevice with continuous streaming."""
-        while not self._stop_event.is_set():
-            try:
-                data = self._queue.get(timeout=QUEUE_TIMEOUT)
-                if data is None:
-                    continue
-                    
-                # Convert bytes to numpy array
-                array = self._np.frombuffer(data, dtype=self._np.int16)
-                
-                # Write to continuous output stream (no gaps between chunks)
-                self._sd_stream.write(array)
-                
-            except queue.Empty:
-                continue
-            except Exception as e:
-                logger.error(f"Sounddevice playback error: {e}")
-    
     def _pyaudio_loop(self):
-        """Playback loop using pyaudio."""
+        """Playback loop using pyaudio (Deepgram's reference implementation)."""
+        # Pre-allocate silence buffer to avoid crackling on underruns
+        silence_buffer = b'\x00' * (self.config.chunk_size * 2)  # 16-bit = 2 bytes per sample
+        
         while not self._stop_event.is_set():
             try:
                 data = self._queue.get(timeout=QUEUE_TIMEOUT)
@@ -187,9 +176,43 @@ class AudioPlayer:
                 self._stream.write(data)
                 
             except queue.Empty:
-                continue
+                # Write silence to prevent crackling/popping on buffer underrun
+                if SILENCE_ON_UNDERRUN and self._stream:
+                    try:
+                        self._stream.write(silence_buffer)
+                    except Exception:
+                        pass
             except Exception as e:
-                logger.error(f"PyAudio playback error: {e}")
+                if not self._stop_event.is_set():
+                    logger.error(f"PyAudio playback error: {e}")
+    
+    def _sounddevice_loop(self):
+        """Playback loop using sounddevice (fallback)."""
+        # Pre-allocate silence buffer to avoid crackling on underruns
+        silence_array = self._np.zeros(self.config.chunk_size, dtype=self._np.int16)
+        
+        while not self._stop_event.is_set():
+            try:
+                data = self._queue.get(timeout=QUEUE_TIMEOUT)
+                if data is None:
+                    continue
+                    
+                # Convert bytes to numpy array
+                array = self._np.frombuffer(data, dtype=self._np.int16)
+                
+                # Write to continuous output stream
+                self._sd_stream.write(array)
+                
+            except queue.Empty:
+                # Write silence to prevent crackling/popping on buffer underrun
+                if SILENCE_ON_UNDERRUN and hasattr(self, '_sd_stream') and self._sd_stream:
+                    try:
+                        self._sd_stream.write(silence_array)
+                    except Exception:
+                        pass
+            except Exception as e:
+                if not self._stop_event.is_set():
+                    logger.error(f"Sounddevice playback error: {e}")
     
     def play(self, audio_data: bytes):
         """
@@ -224,15 +247,7 @@ class AudioPlayer:
             self._thread = None
         
         # Cleanup backend
-        if self._backend == "sounddevice":
-            if hasattr(self, '_sd_stream') and self._sd_stream:
-                try:
-                    self._sd_stream.stop()
-                    self._sd_stream.close()
-                except:
-                    pass
-                self._sd_stream = None
-        elif self._backend == "pyaudio":
+        if self._backend == "pyaudio":
             if self._stream:
                 try:
                     self._stream.stop_stream()
@@ -240,11 +255,20 @@ class AudioPlayer:
                 except:
                     pass
                 self._stream = None
-            if hasattr(self, '_pyaudio'):
+            if self._pyaudio_instance:
                 try:
-                    self._pyaudio.terminate()
+                    self._pyaudio_instance.terminate()
                 except:
                     pass
+                self._pyaudio_instance = None
+        elif self._backend == "sounddevice":
+            if hasattr(self, '_sd_stream') and self._sd_stream:
+                try:
+                    self._sd_stream.stop()
+                    self._sd_stream.close()
+                except:
+                    pass
+                self._sd_stream = None
         
         logger.info("Audio player stopped")
     

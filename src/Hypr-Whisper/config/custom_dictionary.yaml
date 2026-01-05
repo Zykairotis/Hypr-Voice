@@ -1,0 +1,109 @@
+# Custom Vocabulary Dictionary
+# Add project-specific, domain-specific, and frequently-used terms here
+
+# Project-specific terms
+project_terms:
+  - "Zykairotis"
+  - "Hypr-Voice"
+  - "Hyprland"
+  - "Whisper"
+  - "Wayland"
+
+# Domain-specific technical terms
+domains:
+  ai_ml:
+    - "transformer"
+    - "attention mechanism"
+    - "gradient descent"
+    - "neural network"
+    - "embedding"
+    - "vector database"
+    - "semantic search"
+    - "LLM"
+    - "tokenization"
+    - "inference"
+
+  databases:
+    - "PostgreSQL"
+    - "vector database"
+    - "pgvector"
+    - "Qdrant"
+    - "Milvus"
+    - "FAISS"
+    - "MongoDB"
+    - "Redis"
+
+  cloud_infrastructure:
+    - "Kubernetes"
+    - "Docker"
+    - "Terraform"
+    - "Ansible"
+    - "AWS"
+    - "Azure"
+    - "GCP"
+    - "CI/CD"
+
+  development_tools:
+    - "GitLab"
+    - "GitHub"
+    - "Jenkins"
+    - "webpack"
+    - "babel"
+    - "eslint"
+    - "prettier"
+    - "TypeScript"
+    - "JavaScript"
+    - "React"
+    - "Vue"
+    - "Angular"
+    - "Node.js"
+    - "Express"
+    - "Django"
+    - "Flask"
+    - "FastAPI"
+
+  linux_desktop:
+    - "Hyprland"
+    - "Waybar"
+    - "wlogout"
+    - "wofi"
+    - "swaync"
+    - "PipeWire"
+    - "WirePlumber"
+
+# Company and product names
+products:
+  - "Anthropic"
+  - "Claude"
+  - "OpenAI"
+  - "GPT"
+  - "ChatGPT"
+  - "Cursor"
+  - "VSCode"
+  - "IntelliJ"
+
+# Programming keywords
+programming:
+  - "async"
+  - "await"
+  - "callback"
+  - "promise"
+  - "recursion"
+  - "inheritance"
+  - "polymorphism"
+  - "encapsulation"
+  - "abstraction"
+  - "interface"
+
+# Shell commands
+shell_commands:
+  - "systemctl"
+  - "journalctl"
+  - "hyprctl"
+  - "kubectl"
+  - "docker"
+  - "git"
+  - "npm"
+  - "pip"
+  - "yarn"
+  - "cargo"

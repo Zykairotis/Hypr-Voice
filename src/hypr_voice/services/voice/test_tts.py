@@ -8,7 +8,7 @@ import asyncio
 import argparse
 import sys
 import logging
-from tts_manager import text_to_speech, TTSProvider, UniversalTTS, TTSConfig
+from .tts_manager import text_to_speech, TTSProvider, UniversalTTS, TTSConfig
 
 # Enable logging for debugging
 logging.basicConfig(

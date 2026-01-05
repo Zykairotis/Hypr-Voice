@@ -79,11 +79,47 @@ class VoiceLibrary:
         "special": ["am_santa", "pm_santa"]
     }
     
+    # Deepgram Aura-2 English voices (model ids)
+    _DG_ALL = [
+        "aura-2-thalia-en", "aura-2-andromeda-en", "aura-2-helena-en",
+        "aura-2-apollo-en", "aura-2-arcas-en", "aura-2-aries-en",
+        "aura-2-amalthea-en", "aura-2-asteria-en", "aura-2-athena-en",
+        "aura-2-atlas-en", "aura-2-aurora-en", "aura-2-callista-en",
+        "aura-2-cora-en", "aura-2-cordelia-en", "aura-2-delia-en",
+        "aura-2-draco-en", "aura-2-electra-en", "aura-2-harmonia-en",
+        "aura-2-hera-en", "aura-2-hermes-en", "aura-2-hyperion-en",
+        "aura-2-iris-en", "aura-2-janus-en", "aura-2-juno-en",
+        "aura-2-jupiter-en", "aura-2-luna-en", "aura-2-mars-en",
+        "aura-2-minerva-en", "aura-2-neptune-en", "aura-2-odysseus-en",
+        "aura-2-ophelia-en", "aura-2-orion-en", "aura-2-orpheus-en",
+        "aura-2-pandora-en", "aura-2-phoebe-en", "aura-2-pluto-en",
+        "aura-2-saturn-en", "aura-2-selene-en", "aura-2-theia-en",
+        "aura-2-vesta-en", "aura-2-zeus-en",
+    ]
+    _DG_FEMALE = [
+        "aura-2-thalia-en", "aura-2-andromeda-en", "aura-2-helena-en",
+        "aura-2-asteria-en", "aura-2-athena-en", "aura-2-aurora-en",
+        "aura-2-callista-en", "aura-2-cora-en", "aura-2-cordelia-en",
+        "aura-2-delia-en", "aura-2-electra-en", "aura-2-harmonia-en",
+        "aura-2-hera-en", "aura-2-iris-en", "aura-2-janus-en",
+        "aura-2-juno-en", "aura-2-luna-en", "aura-2-minerva-en",
+        "aura-2-ophelia-en", "aura-2-pandora-en", "aura-2-phoebe-en",
+        "aura-2-selene-en", "aura-2-theia-en", "aura-2-vesta-en",
+        "aura-2-amalthea-en",
+    ]
+    _DG_MALE = [
+        "aura-2-apollo-en", "aura-2-arcas-en", "aura-2-aries-en",
+        "aura-2-atlas-en", "aura-2-draco-en", "aura-2-hermes-en",
+        "aura-2-hyperion-en", "aura-2-jupiter-en", "aura-2-mars-en",
+        "aura-2-neptune-en", "aura-2-odysseus-en", "aura-2-orion-en",
+        "aura-2-orpheus-en", "aura-2-pluto-en", "aura-2-saturn-en",
+        "aura-2-zeus-en",
+    ]
+
     DEEPGRAM_VOICES = {
-        "female": ["luna", "athena", "asteria", "aurora", "hera", "thalia", "andromeda", "helena"],
-        "male": ["apollo", "atlas", "hermes", "draco", "aries", "arcas", "amalthea"],
-        "all": ["luna", "athena", "apollo", "atlas", "hermes", "asteria", "aurora", 
-                 "hera", "thalia", "andromeda", "helena", "draco", "aries", "arcas", "amalthea"]
+        "female": _DG_FEMALE,
+        "male": _DG_MALE,
+        "all": _DG_ALL,
     }
     
     ELEVENLABS_VOICES = {

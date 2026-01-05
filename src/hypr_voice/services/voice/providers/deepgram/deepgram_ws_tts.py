@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_MODEL = "aura-2-thalia-en"
 DEFAULT_SAMPLE_RATE = 48000
 DEFAULT_ENCODING = "linear16"
+DEFAULT_PREBUFFER_MS = 1000  # wait for ~1.0s audio before starting playback to avoid underruns
 
 
 @dataclass
@@ -185,7 +186,7 @@ class DeepgramWebSocketTTS:
             logger.error(f"Failed to send text: {e}")
             return False
     
-    async def flush(self) -> bool:
+    async def flush(self, ack_timeout: Optional[float] = None) -> bool:
         """
         Signal end of text input. Deepgram will finish generating remaining audio.
         
@@ -203,7 +204,8 @@ class DeepgramWebSocketTTS:
             logger.debug("Sent flush command")
             # Wait briefly for server confirmation so we don't close too early
             try:
-                await asyncio.wait_for(self._flush_event.wait(), timeout=5)
+                timeout = ack_timeout if ack_timeout is not None else float(os.getenv("HYPR_VOICE_TTS_FLUSH_TIMEOUT", "15"))
+                await asyncio.wait_for(self._flush_event.wait(), timeout=timeout)
             except asyncio.TimeoutError:
                 logger.warning("Deepgram flush acknowledgement timed out; continuing shutdown")
             return True
@@ -322,7 +324,8 @@ class StreamingTTSSession:
         api_key: str,
         model: str = DEFAULT_MODEL,
         sample_rate: int = DEFAULT_SAMPLE_RATE,
-        auto_play: bool = True
+        auto_play: bool = True,
+        prebuffer_ms: int = DEFAULT_PREBUFFER_MS,
     ):
         self.config = DeepgramWSConfig(
             api_key=api_key,
@@ -330,9 +333,16 @@ class StreamingTTSSession:
             sample_rate=sample_rate,
         )
         self.auto_play = auto_play
+        self.prebuffer_ms = max(0, prebuffer_ms)
         self._tts = None
         self._player = None
         self._all_audio = []
+        self._last_audio_time = None
+        self._first_audio_time = None
+        self._total_audio_bytes = 0
+        self._pending_audio: list[bytes] = []
+        self._pending_bytes: int = 0
+        self._playback_started = False
         
     async def __aenter__(self):
         """Start session."""
@@ -349,20 +359,82 @@ class StreamingTTSSession:
     
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """End session."""
+        import time
+        
         if self._tts:
-            await self._tts.flush()
-            # Wait a bit for remaining audio
-            await asyncio.sleep(0.5)
+            # Flush and wait for tail audio before closing
+            await self._tts.flush(ack_timeout=float(os.getenv("HYPR_VOICE_TTS_FLUSH_TIMEOUT", "60")))
+            # Allow extra time for trailing audio to arrive even if ack is missing
+            tail_wait = float(os.getenv("HYPR_VOICE_TTS_IDLE_TIMEOUT", "5.0"))
+            if self._last_audio_time:
+                # wait until no audio has arrived for tail_wait seconds
+                while (time.time() - self._last_audio_time) < tail_wait:
+                    await asyncio.sleep(0.1)
+            else:
+                # no audio yet; small pause to avoid immediate close
+                await asyncio.sleep(0.5)
             await self._tts.close()
+        
+        # If we never hit the prebuffer threshold but did receive audio, play it now
+        if self._player and not self._playback_started and self._pending_audio:
+            for chunk in self._pending_audio:
+                self._player.play(chunk)
+            self._pending_audio = []
+            self._pending_bytes = 0
+            self._playback_started = True
+        
+        # Calculate remaining playback time
+        # Audio was played in real-time as it streamed, so we only need to wait
+        # for the audio that was received but not yet played
+        if self._player and self._first_audio_time and self._last_audio_time:
+            # Total audio duration (bytes / 2 bytes per sample / sample_rate)
+            total_duration_sec = self._total_audio_bytes / 2 / self.config.sample_rate
             
-        if self._player:
+            # Time elapsed since we started receiving audio
+            elapsed_since_first = time.time() - self._first_audio_time
+            
+            # How much more time we need to wait
+            remaining_time = total_duration_sec - elapsed_since_first + 1.0  # +1s buffer
+            
+            if remaining_time > 0:
+                logger.info(f"[StreamingTTSSession] Audio: {self._total_audio_bytes} bytes ({total_duration_sec:.1f}s), "
+                           f"elapsed: {elapsed_since_first:.1f}s, waiting: {remaining_time:.1f}s")
+                await asyncio.sleep(remaining_time)
+            else:
+                logger.info(f"[StreamingTTSSession] Audio already finished (total: {total_duration_sec:.1f}s, elapsed: {elapsed_since_first:.1f}s)")
+            
+            logger.info(f"[StreamingTTSSession] Playback complete, stopping player")
+            self._stop_player()
+        elif self._player:
+            # No audio received, just stop
+            logger.info(f"[StreamingTTSSession] No audio received, stopping player")
             self._stop_player()
     
     def _handle_audio(self, audio_chunk: bytes):
         """Handle incoming audio chunk."""
+        import time
+        now = time.time()
+        if self._first_audio_time is None:
+            self._first_audio_time = now
+        self._last_audio_time = now
+        self._total_audio_bytes += len(audio_chunk)
+        
         self._all_audio.append(audio_chunk)
         if self._player:
-            self._player.play(audio_chunk)
+            # Buffer until we have enough audio to avoid PyAudio underruns, then start playback
+            if not self._playback_started and self.prebuffer_ms > 0:
+                self._pending_audio.append(audio_chunk)
+                self._pending_bytes += len(audio_chunk)
+                bytes_needed = int(self.config.sample_rate * 2 * (self.prebuffer_ms / 1000.0))
+                if self._pending_bytes >= bytes_needed:
+                    for chunk in self._pending_audio:
+                        self._player.play(chunk)
+                    self._pending_audio = []
+                    self._pending_bytes = 0
+                    self._playback_started = True
+            else:
+                self._playback_started = True
+                self._player.play(audio_chunk)
     
     def _start_player(self):
         """Initialize audio player."""
@@ -383,9 +455,11 @@ class StreamingTTSSession:
         """Stop audio player."""
         if self._player:
             try:
-                self._player.stop()
+                # Wait for remaining audio to finish before stopping
+                self._player.stop(wait=True, timeout=10.0)
+                logger.info("[StreamingTTSSession] Audio player stopped")
             except Exception as e:
-                logger.error(f"Failed to stop audio player: {e}")
+                logger.error(f"[StreamingTTSSession] Failed to stop audio player: {e}")
             self._player = None
     
     async def send(self, text: str):

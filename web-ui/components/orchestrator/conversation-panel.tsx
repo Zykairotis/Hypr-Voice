@@ -69,6 +69,8 @@ export default function ConversationPanel({ orchestratorOnline }: ConversationPa
   useEffect(() => {
     if (orchestratorOnline) {
       fetchConversations();
+      const id = setInterval(fetchConversations, 5000);
+      return () => clearInterval(id);
     }
   }, [orchestratorOnline]);
 
@@ -102,27 +104,21 @@ export default function ConversationPanel({ orchestratorOnline }: ConversationPa
       const response = await fetch(endpoints.direct.voice.conversations);
       if (response.ok) {
         const data = await response.json();
-        setConversations(data.conversations || []);
+        const convs = data.conversations || [];
+        setConversations(convs);
+
+        // Auto-select the most recent conversation if none selected
+        if (!currentConversation && convs.length > 0) {
+          setCurrentConversation(convs[0]);
+        }
       }
     } catch (error) {
       console.error("Failed to fetch conversations:", error);
     }
   };
 
-  const createConversation = async () => {
-    try {
-      const response = await fetch(endpoints.direct.voice.conversations, {
-        method: "POST",
-      });
-      if (response.ok) {
-        const conv = await response.json();
-        setConversations(prev => [conv, ...prev]);
-        setCurrentConversation(conv);
-      }
-    } catch (error) {
-      console.error("Failed to create conversation:", error);
-    }
-  };
+  // Placeholder: backend has no POST /voice/conversations; polling fetch fills conversations
+  const createConversation = async () => fetchConversations();
 
   const sendMessageStreaming = useCallback(async () => {
     if (!input.trim() || isLoading || !orchestratorOnline) return;

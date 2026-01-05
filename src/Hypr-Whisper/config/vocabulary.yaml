@@ -55,7 +55,6 @@ global:
     - variable
     - class
     - method
-    - property
     - interface
     - namespace
     - module

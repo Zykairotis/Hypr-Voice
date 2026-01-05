@@ -8,9 +8,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WHISPER_ROOT="$(dirname "$SCRIPT_DIR")"
 
 # For hybrid-whisper worktree, we need to go up to the main Hypr-Voice root
-# Path: .../Hypr-Voice/src/hybrid-whisper/src/Hypr-Whisper/scripts
-# We need to go up 5 levels to reach Hypr-Voice root
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../../../.." && pwd)"
+# Path: .../Hypr-Voice/src/Hypr-Whisper/scripts
+# We need to go up 3 levels to reach Hypr-Voice root
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 VENV_PATH="$PROJECT_ROOT/.venv"
 
 # Configuration
@@ -86,6 +86,11 @@ check_dependencies() {
         $INSTALLER faster-whisper
     }
     
+    $PYTHON -c "import transformers" 2>/dev/null || {
+        print_warning "transformers not installed. Installing..."
+        $INSTALLER transformers
+    }
+
     $PYTHON -c "import soundfile" 2>/dev/null || {
         print_warning "soundfile not installed. Installing..."
         $INSTALLER soundfile

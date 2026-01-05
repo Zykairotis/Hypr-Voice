@@ -58,9 +58,11 @@ try:
     try:
         from claude_agent_sdk import PermissionResultAllow, PermissionResultDeny
     except (ImportError, AttributeError):
-        # Provide dummy classes if not available to avoid AttributeErrors
-        class PermissionResultAllow: pass
-        class PermissionResultDeny: pass
+        # Provide robust dummy classes if not available to avoid AttributeErrors
+        class PermissionResultAllow:
+            def __init__(self, **kwargs): pass
+        class PermissionResultDeny:
+            def __init__(self, **kwargs): pass
 
     try:
         from claude_agent_sdk import create_sdk_mcp_server

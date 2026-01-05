@@ -13,6 +13,32 @@ from pathlib import Path
 import asyncio
 import aiohttp
 import os
+import sys
+from loguru import logger
+
+# Configure Loguru
+LOG_DIR = os.getenv("HYPR_VOICE_LOG_DIR", "/tmp/hypr-voice")
+LOG_FILE = os.path.join(LOG_DIR, "hypr-voice.log")
+
+# Ensure log directory exists
+os.makedirs(LOG_DIR, exist_ok=True)
+
+# Remove default handler and add file handler
+logger.remove()
+logger.add(
+    sys.stderr,
+    format="<green>{time:HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+    level="INFO"
+)
+logger.add(
+    LOG_FILE,
+    rotation="10 MB",
+    retention="1 day",
+    format="{time:HH:mm:ss.SSS} [bridge] [{level}] {message}",
+    level="INFO"
+)
+
+logger.info("Bridge API starting up...")
 
 app = FastAPI(title="Hypr-Voice Web UI Bridge", version="1.0.0")
 
@@ -611,7 +637,8 @@ async def websocket_context(websocket: WebSocket):
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                print(f"Upstream context WS reconnect in {retry_delay}s: {e}")
+            except Exception as e:
+                logger.warning(f"Upstream context WS reconnect in {retry_delay}s: {e}")
                 await asyncio.sleep(min(retry_delay, 5))
                 retry_delay = min(retry_delay * 2, 10)
 
@@ -622,8 +649,9 @@ async def websocket_context(websocket: WebSocket):
     except WebSocketDisconnect:
         relay_task.cancel()
     except Exception as e:
+    except Exception as e:
         if "close message" not in str(e).lower():
-            print(f"WebSocket connection error: {e}")
+            logger.error(f"WebSocket connection error: {e}")
 
 
 # ============================================================================

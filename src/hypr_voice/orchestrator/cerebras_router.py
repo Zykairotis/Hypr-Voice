@@ -74,12 +74,18 @@ class CerebrasRouter:
         """Initialize router with API keys from environment."""
         self.api_keys = self._load_api_keys()
         self.current_key_index = 0
-        self.model = "llama3.1-8b"  # Fast inference model (~200ms)
+        
+        # Use preferred model from env, default to gpt-oss-120b
+        preferred_models = os.getenv("CEREBRAS_PREFERRED_MODELS", "gpt-oss-120b")
+        self.model = preferred_models.split(",")[0].strip()
+        
+        # Timeout from env (default 3s for fast routing)
+        self.timeout = float(os.getenv("CEREBRAS_ROUTER_TIMEOUT", "3"))
         
         if not self.api_keys:
             logger.warning("No Cerebras API keys found - will use fallback routing")
         else:
-            logger.info(f"CerebrasRouter initialized with {len(self.api_keys)} API keys")
+            logger.info(f"CerebrasRouter initialized: model={self.model}, keys={len(self.api_keys)}, timeout={self.timeout}s")
     
     def _load_api_keys(self) -> List[str]:
         """Load API keys from environment."""
@@ -176,16 +182,20 @@ class CerebrasRouter:
             logger.error(f"Cerebras routing error: {e}")
             return self._fallback_route(query)
     
-    async def route_async(self, query: str) -> RouteDecision:
+    async def route_async(self, query: str, timeout: float = None) -> RouteDecision:
         """
         Async version of route for better performance.
         
         Args:
             query: User's input query
+            timeout: Max seconds to wait for Cerebras (default: self.timeout from env)
             
         Returns:
             RouteDecision with agent_type, confidence, and reasoning
         """
+        import asyncio
+        
+        timeout = timeout or self.timeout
         api_key = self._get_next_key()
         
         if not api_key:
@@ -196,14 +206,18 @@ class CerebrasRouter:
             
             client = AsyncCerebras(api_key=api_key)
             
-            response = await client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": ROUTING_PROMPT},
-                    {"role": "user", "content": query}
-                ],
-                max_tokens=150,
-                temperature=0.1,
+            # Add timeout to prevent slow routing
+            response = await asyncio.wait_for(
+                client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": ROUTING_PROMPT},
+                        {"role": "user", "content": query}
+                    ],
+                    max_tokens=150,
+                    temperature=0.1,
+                ),
+                timeout=timeout
             )
             
             content = response.choices[0].message.content.strip()
@@ -233,6 +247,9 @@ class CerebrasRouter:
             except json.JSONDecodeError:
                 return self._fallback_route(query)
                 
+        except asyncio.TimeoutError:
+            logger.warning(f"Cerebras routing timed out after {timeout}s, using fallback")
+            return self._fallback_route(query)
         except Exception as e:
             logger.error(f"Async Cerebras routing error: {e}")
             return self._fallback_route(query)

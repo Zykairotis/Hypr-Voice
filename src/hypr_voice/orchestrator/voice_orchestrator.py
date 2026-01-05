@@ -6,7 +6,6 @@ Provides a complete voice-to-voice conversation pipeline.
 """
 
 import asyncio
-import logging
 import os
 import tempfile
 import time
@@ -18,8 +17,10 @@ import aiohttp
 from pathlib import Path
 
 from .orchestrator import HyprVoiceOrchestrator, OrchestratorConfig
+from ..services.observability import emitter
+from ..core.loggurl import LogGurl
 
-logger = logging.getLogger(__name__)
+log = LogGurl("voice")
 
 # Regex for stripping markdown
 import re
@@ -66,7 +67,7 @@ try:
     TTS_AVAILABLE = True
 except ImportError:
     TTS_AVAILABLE = False
-    logger.warning("TTS system not available")
+    log.warning("TTS system not available")
 
 
 @dataclass
@@ -160,32 +161,44 @@ class VoiceOrchestrator:
         if TTS_AVAILABLE:
             self._initialize_tts()
         else:
-            logger.warning("TTS not available - responses will be text only")
+            log.warning("TTS not available - responses will be text only")
     
     def _initialize_tts(self):
         """Initialize TTS with Deepgram."""
         try:
             # Get API key from environment
             deepgram_key = os.getenv("DEEPGRAM_API_KEY")
-            logger.info(f"[TTS Init] DEEPGRAM_API_KEY present: {bool(deepgram_key)}, provider: {self.config.tts_provider}")
+            log.info(f"[TTS Init] DEEPGRAM_API_KEY present: {bool(deepgram_key)}, provider: {self.config.tts_provider}")
             if not deepgram_key:
-                logger.warning("DEEPGRAM_API_KEY not set - TTS disabled")
+                log.warning("DEEPGRAM_API_KEY not set - TTS disabled")
                 return
+
+            random_voice = os.getenv("HYPR_VOICE_TTS_RANDOM", "0") == "1" or \
+                           os.getenv("HYPR_VOICE_TTS_RANDOM_AURA2", "0") == "1"
             
+            # Disable streaming TTS by default to avoid stutter when LLM tokens are slow.
+            # Can be re-enabled with HYPR_VOICE_TTS_REST_STREAMING=1
+            rest_streaming = os.getenv("HYPR_VOICE_TTS_REST_STREAMING", "0") == "1"
+            if rest_streaming:
+                log.info("[TTS Init] REST streaming enabled via HYPR_VOICE_TTS_REST_STREAMING=1")
+            else:
+                log.info("[TTS Init] Using non-streaming Deepgram TTS (full audio then play)")
+
             provider = TTSProvider(self.config.tts_provider.lower())
             tts_config = TTSConfig(
                 provider=provider,
-                voice=self.config.tts_voice,
+                voice=None if random_voice else self.config.tts_voice,
                 deepgram_api_key=deepgram_key,
                 save_to_file=self.config.save_to_file,
                 output_dir=self.config.output_dir or "./audio_output",
-                use_streaming=True,
-                stream_and_play=True,  # Enable auto-play during streaming
+                use_streaming=rest_streaming,
+                stream_and_play=True,  # Auto-play after TTS finishes
+                use_random_voice=random_voice,
             )
             self.tts = UniversalTTS(tts_config)
-            logger.info(f"[TTS Init] SUCCESS - provider={self.config.tts_provider}, voice={self.config.tts_voice}")
+            log.info(f"[TTS Init] SUCCESS - provider={self.config.tts_provider}, voice={self.config.tts_voice}")
         except Exception as e:
-            logger.error(f"[TTS Init] FAILED: {e}", exc_info=True)
+            log.error(f"[TTS Init] FAILED: {e}", exc_info=True)
             self.tts = None
     
     def create_conversation(self) -> Conversation:
@@ -196,7 +209,7 @@ class VoiceOrchestrator:
         )
         self.conversations[conv.id] = conv
         self.current_conversation_id = conv.id
-        logger.info(f"Created conversation {conv.id}")
+        log.info(f"Created conversation {conv.id}")
         return conv
     
     def get_conversation(self, conversation_id: Optional[str] = None) -> Optional[Conversation]:
@@ -248,7 +261,7 @@ class VoiceOrchestrator:
                         raise Exception(f"Transcription failed: {error}")
                         
         except Exception as e:
-            logger.error(f"Transcription error: {e}")
+            log.error(f"Transcription error: {e}")
             raise
     
     async def speak(self, text: str) -> dict:
@@ -261,9 +274,9 @@ class VoiceOrchestrator:
         Returns:
             Dict with audio info
         """
-        logger.info(f"[speak] Called with text len={len(text)}, TTS available={self.tts is not None}")
+        log.info(f"[speak] Called with text len={len(text)}, TTS available={self.tts is not None}")
         if not self.tts:
-            logger.warning("[speak] TTS not available, returning error")
+            log.warning("[speak] TTS not available, returning error")
             return {
                 "success": False,
                 "error": "TTS not available",
@@ -272,12 +285,12 @@ class VoiceOrchestrator:
         
         try:
             start_time = time.time()
-            logger.info(f"[speak] Calling TTS.speak() for text: '{text[:100]}...'")
+            log.info(f"[speak] Calling TTS.speak() for text: '{text[:100]}...'")
             result = await self.tts.speak(text)
             duration_ms = int((time.time() - start_time) * 1000)
             
             audio_file = result.get("audio_file") or result.get("audio_path")
-            logger.info(f"[speak] TTS returned in {duration_ms}ms, audio_file={audio_file}")
+            log.info(f"[speak] TTS returned in {duration_ms}ms, audio_file={audio_file}")
             
             return {
                 "success": True,
@@ -288,7 +301,7 @@ class VoiceOrchestrator:
                 "provider": self.config.tts_provider,
             }
         except Exception as e:
-            logger.error(f"[speak] TTS error: {e}", exc_info=True)
+            log.error(f"[speak] TTS error: {e}", exc_info=True)
             return {
                 "success": False,
                 "error": str(e),
@@ -319,24 +332,67 @@ class VoiceOrchestrator:
         
         # Add user message
         user_msg = conv.add_message("user", text)
-        
+
+        # Emit observability event
+        await emitter.emit(
+            "TRANSCRIPTION_COMPLETE",  # aligns with whisper emit naming; here user-provided text
+            {
+                "text": text,
+                "conversation_id": conv.id,
+            },
+            session_id=conv.id,
+        )
+
         yield {
             "type": "user_message",
             "message": user_msg.to_dict(),
             "conversation_id": conv.id,
         }
+
+        t0 = time.time()
+        log.info(
+            f"[process_text] conv={conv.id} len={len(text)} speak={speak_response} "
+            f"streaming_tts={os.getenv('HYPR_VOICE_TTS_STREAMING', '0')}"
+        )
         
         # Process through orchestrator
         response_text = ""
         agent_type = None
-        # Optional streaming Deepgram WebSocket session (for instant audio)
+
+        # Build lightweight conversation context to preserve short-term memory.
+        # Use previous turns only (exclude the current user message).
+        def build_context_prefix() -> str:
+            prior = conv.messages[:-1]
+            if not prior:
+                return ""
+            recent = prior[-6:]  # cap to last 6 turns
+            parts = []
+            for m in recent:
+                speaker = "User" if m.role == "user" else "Assistant"
+                parts.append(f"{speaker}: {m.content}")
+            return "Conversation so far:\n" + "\n".join(parts) + "\n\n"
+
+        context_prefix = build_context_prefix()
+        orchestrator_input = f"{context_prefix}Current user: {text}" if context_prefix else text
+        
+        # TTS configuration
+        # NOTE: WebSocket streaming TTS disabled by default - causes stuttering when
+        # LLM tokens arrive slowly. Using REST TTS instead which generates complete audio.
+        # To re-enable streaming, set HYPR_VOICE_TTS_STREAMING=1
         dg_stream_cm = None
         dg_session = None
         dg_audio_data: Optional[bytes] = None
         dg_sample_rate = 48000
         streaming_tts_used = False
+        use_streaming = os.getenv("HYPR_VOICE_TTS_STREAMING", "0") == "1"
+        dg_text_buffer = ""
+        dg_last_send = time.time()
+        dg_min_chars = int(os.getenv("HYPR_VOICE_TTS_MIN_CHARS", "140"))
+        dg_max_latency = float(os.getenv("HYPR_VOICE_TTS_MAX_LATENCY", "0.8"))
+        
         if (
-            speak_response
+            use_streaming
+            and speak_response
             and os.getenv("DEEPGRAM_API_KEY")
             and self.config.tts_provider.lower() == "deepgram"
         ):
@@ -344,19 +400,39 @@ class VoiceOrchestrator:
                 from ..services.voice.providers.deepgram.deepgram_ws_tts import (
                     StreamingTTSSession,
                 )
-                
+                from ..services.voice.tts_manager import VoiceLibrary
+
                 dg_sample_rate = getattr(self.tts.config, "sample_rate", 48000) if self.tts else 48000
-                dg_model = os.getenv("HYPR_VOICE_TTS_MODEL", self.config.tts_voice)
+                # Choose model: explicit env > random aura-2 > configured voice
+                random_voice = os.getenv("HYPR_VOICE_TTS_RANDOM", "0") == "1" or \
+                               os.getenv("HYPR_VOICE_TTS_RANDOM_AURA2", "0") == "1"
+                if random_voice:
+                    import random
+                    dg_model = random.choice(VoiceLibrary.DEEPGRAM_VOICES["all"])
+                else:
+                    dg_model = os.getenv("HYPR_VOICE_TTS_MODEL", self.config.tts_voice)
                 
+                prebuffer_ms = int(os.getenv("HYPR_VOICE_TTS_PREBUFFER_MS", "600"))
                 dg_stream_cm = StreamingTTSSession(
                     api_key=os.getenv("DEEPGRAM_API_KEY"),
                     model=dg_model,
                     sample_rate=dg_sample_rate,
                     auto_play=True,  # Auto-play audio as it streams
+                    prebuffer_ms=prebuffer_ms,
                 )
                 dg_session = await dg_stream_cm.__aenter__()
                 streaming_tts_used = True
-                
+
+                await emitter.emit(
+                    "TTS_STREAM_START",
+                    {
+                        "provider": "deepgram",
+                        "model": dg_model,
+                        "sample_rate": dg_sample_rate,
+                    },
+                    session_id=conv.id,
+                )
+
                 yield {
                     "type": "tts_start",
                     "text": "(streaming) Deepgram WebSocket connected",
@@ -364,12 +440,12 @@ class VoiceOrchestrator:
                     "model": dg_model,
                 }
             except Exception as e:
-                logger.warning(f"Deepgram WebSocket TTS unavailable, falling back: {e}")
+                log.warning(f"Deepgram WebSocket TTS unavailable, falling back: {e}")
                 dg_stream_cm = None
                 dg_session = None
                 streaming_tts_used = False
         
-        async for chunk in self.orchestrator.process(text):
+        async for chunk in self.orchestrator.process(orchestrator_input, session_id=conv.id):
             yield {
                 "type": "orchestrator_chunk",
                 "chunk": chunk,
@@ -379,20 +455,46 @@ class VoiceOrchestrator:
                 content = chunk.get("content", "")
                 response_text += content
                 agent_type = chunk.get("agent")
-                
+
                 # Stream text to Deepgram WebSocket immediately
                 if dg_session:
                     try:
-                        await dg_session.send(content)
+                        dg_text_buffer += content
+                        now = time.time()
+                        should_flush = (
+                            len(dg_text_buffer) >= dg_min_chars
+                            or any(p in dg_text_buffer for p in ".!?;:")
+                            or (now - dg_last_send) >= dg_max_latency
+                        )
+                        if should_flush:
+                            await dg_session.send(strip_markdown_for_tts(dg_text_buffer))
+                            dg_text_buffer = ""
+                            dg_last_send = now
                     except Exception as e:
-                        logger.warning(f"Failed to send chunk to Deepgram WS: {e}")
+                        log.warning(f"Failed to send chunk to Deepgram WS: {e}")
             elif chunk.get("type") == "route_decision":
+                await emitter.emit(
+                    "ROUTE_DECISION",
+                    {
+                        "agent": chunk.get("route"),
+                        "confidence": chunk.get("confidence"),
+                        "reasoning": chunk.get("reasoning"),
+                    },
+                    session_id=conv.id,
+                )
                 yield {
                     "type": "routing",
                     "agent": chunk.get("route"),
                     "confidence": chunk.get("confidence"),
                     "reasoning": chunk.get("reasoning"),
                 }
+        
+        # Send any remaining buffered text to TTS
+        if dg_session and dg_text_buffer:
+            try:
+                await dg_session.send(strip_markdown_for_tts(dg_text_buffer))
+            except Exception as e:
+                log.warning(f"Failed to send final buffered text to Deepgram WS: {e}")
         
         if not response_text:
             response_text = "I'm sorry, I couldn't generate a response."
@@ -413,7 +515,7 @@ class VoiceOrchestrator:
                     await dg_stream_cm.__aexit__(None, None, None)
                     dg_audio_data = dg_stream_cm.get_all_audio()
                 except Exception as e:
-                    logger.warning(f"Deepgram streaming shutdown issue: {e}")
+                    log.warning(f"Deepgram streaming shutdown issue: {e}")
                     dg_audio_data = None
                 
                 audio_file = None
@@ -426,8 +528,13 @@ class VoiceOrchestrator:
                         timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
                         filename = f"deepgram_stream_{timestamp}.wav"
                         file_path = output_dir / filename
-                        with open(file_path, "wb") as f:
-                            f.write(dg_audio_data)
+                        # Wrap raw PCM in a WAV header for easier playback/debugging
+                        import wave
+                        with wave.open(str(file_path), "wb") as wf:
+                            wf.setnchannels(1)
+                            wf.setsampwidth(2)  # 16-bit PCM
+                            wf.setframerate(dg_sample_rate)
+                            wf.writeframes(dg_audio_data)
                         audio_file = str(file_path)
                         assistant_msg.audio_file = audio_file
                     assistant_msg.duration_ms = duration_ms
@@ -444,7 +551,20 @@ class VoiceOrchestrator:
                         "streaming": True,
                     },
                 }
+
+                await emitter.emit(
+                    "TTS_STREAM_COMPLETE",
+                    {
+                        "success": dg_audio_data is not None,
+                        "audio_file": audio_file,
+                        "duration_ms": duration_ms,
+                        "provider": "deepgram",
+                        "voice": self.config.tts_voice,
+                    },
+                    session_id=conv.id,
+                )
             elif self.tts:
+                log.info(f"[process_text] TTS start (REST) conv={conv.id} text_len={len(response_text)}")
                 yield {
                     "type": "tts_start",
                     "text": response_text[:100] + "..." if len(response_text) > 100 else response_text,
@@ -460,13 +580,39 @@ class VoiceOrchestrator:
                     "type": "tts_complete",
                     "result": tts_result,
                 }
-        
+
+                await emitter.emit(
+                    "TTS_COMPLETE",
+                    {
+                        "success": tts_result.get("success"),
+                        "audio_file": tts_result.get("audio_file"),
+                        "duration_ms": tts_result.get("duration_ms"),
+                        "provider": tts_result.get("provider"),
+                        "voice": tts_result.get("voice_used"),
+                    },
+                    session_id=conv.id,
+                )
+
         yield {
             "type": "complete",
             "conversation_id": conv.id,
             "response_text": response_text,
             "agent_type": agent_type,
         }
+
+        await emitter.emit(
+            "ORCHESTRATOR_COMPLETE",
+            {
+                "response_len": len(response_text),
+                "agent_type": agent_type,
+            },
+            session_id=conv.id,
+        )
+
+        log.info(
+            f"[process_text] conv={conv.id} done in {time.time() - t0:.2f}s "
+            f"resp_len={len(response_text)} agent={agent_type}"
+        )
     
     async def process_audio(
         self,
@@ -504,7 +650,7 @@ class VoiceOrchestrator:
                 yield chunk
                 
         except Exception as e:
-            logger.error(f"Audio processing error: {e}")
+            log.error(f"Audio processing error: {e}")
             yield {
                 "type": "error",
                 "error": str(e),
@@ -521,8 +667,10 @@ class VoiceOrchestrator:
         Returns:
             Complete response dict
         """
-        logger.info(f"[quick_response] Starting: text='{text[:50]}...', speak={speak}")
-        logger.info(f"[quick_response] TTS available: {self.tts is not None}, provider: {self.config.tts_provider}")
+        t0 = time.time()
+        log.info(f"[quick_response] ━━━ START ━━━")
+        log.info(f"[quick_response] Input: '{text[:100]}{'...' if len(text) > 100 else ''}'")
+        log.info(f"[quick_response] Config: speak={speak}, TTS={self.tts is not None}, provider={self.config.tts_provider}")
         
         result = {
             "input_text": text,
@@ -530,26 +678,64 @@ class VoiceOrchestrator:
             "agent_type": None,
             "audio_file": None,
             "conversation_id": None,
+            "timing": {},
         }
+        
+        routing_time = None
+        llm_time = None
+        tts_time = None
         
         try:
             async for chunk in self.process_text(text, speak_response=speak):
-                logger.debug(f"[quick_response] chunk type: {chunk.get('type')}")
-                if chunk["type"] == "complete":
+                chunk_type = chunk.get("type", "unknown")
+                
+                if chunk_type == "routing":
+                    routing_time = time.time() - t0
+                    log.info(f"[quick_response] ROUTING ({routing_time*1000:.0f}ms): agent={chunk.get('agent')}, confidence={chunk.get('confidence'):.2f}")
+                    log.info(f"[quick_response]   reason: {chunk.get('reasoning', 'N/A')[:100]}")
+                
+                elif chunk_type == "user_message":
+                    log.info(f"[quick_response] User message added to conversation {chunk.get('conversation_id', 'N/A')[:8]}...")
+                
+                elif chunk_type == "assistant_message":
+                    llm_time = time.time() - t0
+                    msg = chunk.get("message", {})
+                    log.info(f"[quick_response] LLM RESPONSE ({llm_time*1000:.0f}ms): {len(msg.get('content', ''))} chars")
+                
+                elif chunk_type == "tts_start":
+                    log.info(f"[quick_response] TTS starting...")
+                
+                elif chunk_type == "tts_complete":
+                    tts_time = time.time() - t0
+                    tts_result = chunk.get("result", {})
+                    result["audio_file"] = tts_result.get("audio_file")
+                    log.info(f"[quick_response] TTS COMPLETE ({tts_time*1000:.0f}ms): success={tts_result.get('success')}, file={result['audio_file']}")
+                
+                elif chunk_type == "complete":
                     result["response_text"] = chunk["response_text"]
                     result["agent_type"] = chunk["agent_type"]
                     result["conversation_id"] = chunk["conversation_id"]
-                    logger.info(f"[quick_response] Got response: agent={result['agent_type']}, len={len(result['response_text'])}")
-                elif chunk["type"] == "tts_complete":
-                    tts_result = chunk.get("result", {})
-                    result["audio_file"] = tts_result.get("audio_file")
-                    logger.info(f"[quick_response] TTS complete: success={tts_result.get('success')}, file={result['audio_file']}")
-                elif chunk["type"] == "error":
-                    logger.error(f"[quick_response] Error chunk: {chunk}")
+                
+                elif chunk_type == "error":
+                    log.error(f"[quick_response] ERROR: {chunk}")
+                    
         except Exception as e:
-            logger.error(f"[quick_response] Exception: {e}", exc_info=True)
+            log.error(f"[quick_response] EXCEPTION: {e}", exc_info=True)
         
-        logger.info(f"[quick_response] Returning: response_len={len(result['response_text'])}, audio={result['audio_file']}")
+        total_time = time.time() - t0
+        result["timing"] = {
+            "total_ms": int(total_time * 1000),
+            "routing_ms": int(routing_time * 1000) if routing_time else None,
+            "llm_ms": int(llm_time * 1000) if llm_time else None,
+            "tts_ms": int((tts_time - llm_time) * 1000) if tts_time and llm_time else None,
+        }
+        
+        log.info(f"[quick_response] ━━━ COMPLETE ━━━")
+        log.info(f"[quick_response] Agent: {result['agent_type']}")
+        log.info(f"[quick_response] Response: {len(result['response_text'])} chars")
+        log.info(f"[quick_response] Audio: {result['audio_file'] or 'streamed'}")
+        log.info(f"[quick_response] Timing: total={total_time*1000:.0f}ms (route={result['timing'].get('routing_ms')}ms, llm={result['timing'].get('llm_ms')}ms, tts={result['timing'].get('tts_ms')}ms)")
+        
         return result
     
     def get_agent_types(self) -> list[dict]:
@@ -602,7 +788,7 @@ class VoiceOrchestrator:
             )
             from ..services.voice.audio_player import AudioPlayer
         except ImportError as e:
-            logger.error(f"Failed to import streaming TTS: {e}")
+            log.error(f"Failed to import streaming TTS: {e}")
             yield {"type": "error", "error": f"Streaming TTS not available: {e}"}
             return
         
@@ -612,23 +798,43 @@ class VoiceOrchestrator:
             model=os.getenv("HYPR_VOICE_TTS_MODEL", "aura-2-thalia-en"),
             sample_rate=48000,
         )
+        prebuffer_ms = int(os.getenv("HYPR_VOICE_TTS_PREBUFFER_MS", "600"))
+        min_chars = int(os.getenv("HYPR_VOICE_TTS_MIN_CHARS", "90"))
+        max_latency = float(os.getenv("HYPR_VOICE_TTS_MAX_LATENCY", "0.6"))
         
         # Audio player for real-time playback
         player = None
+        sample_rate = ws_config.sample_rate
         if auto_play:
             try:
-                player = AudioPlayer(sample_rate=48000)
+                player = AudioPlayer(sample_rate=sample_rate)
                 player.start()
             except Exception as e:
-                logger.warning(f"Audio player not available: {e}")
+                log.warning(f"Audio player not available: {e}")
                 player = None
         
         # Audio callback
         all_audio = []
+        pending_audio: list[bytes] = []
+        pending_bytes = 0
+        playback_started = False
+        bytes_needed = int(sample_rate * 2 * (prebuffer_ms / 1000.0)) if prebuffer_ms > 0 else 0
         def on_audio(chunk: bytes):
             all_audio.append(chunk)
             if player:
-                player.play(chunk)
+                nonlocal pending_audio, pending_bytes, playback_started
+                if not playback_started and prebuffer_ms > 0:
+                    pending_audio.append(chunk)
+                    pending_bytes += len(chunk)
+                    if pending_bytes >= bytes_needed:
+                        for c in pending_audio:
+                            player.play(c)
+                        pending_audio = []
+                        pending_bytes = 0
+                        playback_started = True
+                else:
+                    playback_started = True
+                    player.play(chunk)
         
         tts = DeepgramWebSocketTTS(ws_config, on_audio=on_audio)
         
@@ -646,6 +852,8 @@ class VoiceOrchestrator:
         token_count = 0
         start_time = time.time()
         first_token_time = None
+        text_buffer = ""
+        last_send = start_time
         
         try:
             async for event in self.orchestrator.process_streaming(text):
@@ -672,10 +880,20 @@ class VoiceOrchestrator:
                         response_text += token
                         token_count += 1
                         
-                        # Strip markdown before sending to TTS
-                        clean_token = strip_markdown_for_tts(token)
-                        if clean_token:
-                            await tts.send_text(clean_token)
+                        # Buffer tokens to reduce TTS gaps when the LLM streams slowly
+                        text_buffer += token
+                        now = time.time()
+                        should_flush = (
+                            len(text_buffer) >= min_chars
+                            or any(p in text_buffer for p in ".!?;:")
+                            or (now - last_send) >= max_latency
+                        )
+                        if should_flush:
+                            clean_text = strip_markdown_for_tts(text_buffer)
+                            if clean_text:
+                                await tts.send_text(clean_text)
+                            text_buffer = ""
+                            last_send = now
                         
                         yield {
                             "type": "token",
@@ -692,11 +910,22 @@ class VoiceOrchestrator:
                     break
             
             # Flush remaining audio
+            if text_buffer:
+                clean_text = strip_markdown_for_tts(text_buffer)
+                if clean_text:
+                    await tts.send_text(clean_text)
+                text_buffer = ""
+
             await tts.flush()
             yield {"type": "tts_flushed"}
             
             # Wait for audio to finish playing
             if player:
+                if not playback_started and pending_audio:
+                    for c in pending_audio:
+                        player.play(c)
+                    pending_audio = []
+                    playback_started = True
                 await asyncio.sleep(0.5)  # Give time for final audio
                 while player.queue_size > 0:
                     await asyncio.sleep(0.1)
@@ -732,4 +961,4 @@ class VoiceOrchestrator:
     async def shutdown(self):
         """Shutdown the voice orchestrator."""
         await self.orchestrator.shutdown()
-        logger.info("Voice orchestrator shutdown complete")
+        log.info("Voice orchestrator shutdown complete")
