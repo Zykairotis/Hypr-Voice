@@ -10,10 +10,10 @@ from pathlib import Path
 from typing import Dict, Optional, Any, List
 import sys
 
-# Add Hypr-Whisper to path
-sys.path.append(str(Path(__file__).parent.parent.parent / "Hypr-Whisper"))
+# Add src to path for module imports
+sys.path.append(str(Path(__file__).parent.parent.parent.parent.parent / "src"))
 
-from claude_code_integration import HyprlandMonitor, ApplicationContext
+from hypr_voice.services.tools.claude_code_integration import HyprlandMonitor, ApplicationContext
 
 logger = logging.getLogger(__name__)
 

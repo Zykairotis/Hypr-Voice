@@ -16,6 +16,16 @@ import os
 import sys
 from loguru import logger
 
+# Hypr-Voice imports for vocabulary API
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
+try:
+    from hypr_voice.whisper.vocabulary.vocabulary_manager import get_vocabulary_manager
+    from hypr_voice.whisper.core.context_manager import get_context_manager
+    HAVE_VOCABULARY = True
+except ImportError as e:
+    logger.warning(f"Vocabulary manager not available: {e}")
+    HAVE_VOCABULARY = False
+
 # Configure Loguru
 LOG_DIR = os.getenv("HYPR_VOICE_LOG_DIR", "/tmp/hypr-voice")
 LOG_FILE = os.path.join(LOG_DIR, "hypr-voice.log")
@@ -58,7 +68,7 @@ app.add_middleware(
 
 # Configuration paths
 BASE_DIR = Path(__file__).parent.parent.parent
-WHISPER_CONFIG_DIR = BASE_DIR / "src/Hypr-Whisper/config"
+WHISPER_CONFIG_DIR = BASE_DIR / "config" / "hypr_voice" / "whisper"
 AGENT_CONFIG_DIR = BASE_DIR / "config/hypr_voice"
 ORCHESTRATOR_URL = os.getenv("ORCHESTRATOR_URL", "http://localhost:9093")
 
@@ -440,28 +450,225 @@ async def update_vocabulary_config(config: VocabularyConfig):
     """Update vocabulary configuration"""
     try:
         config_path = WHISPER_CONFIG_DIR / "vocabulary.yaml"
-        
+
         # Load existing config
         existing = {}
         if config_path.exists():
             with open(config_path, 'r') as f:
                 existing = yaml.safe_load(f) or {}
-        
+
         # Update config
         if "settings" not in existing:
             existing["settings"] = {}
         if "post_processing" not in existing["settings"]:
             existing["settings"]["post_processing"] = {}
-        
+
         existing["settings"]["post_processing"]["enabled"] = config.enabled
-        
+
         # Save config
         with open(config_path, 'w') as f:
             yaml.safe_dump(existing, f, default_flow_style=False)
-        
+
         return {"status": "success", "message": "Vocabulary configuration updated"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# VOCABULARY API ENDPOINTS
+# ============================================================================
+
+@app.get("/api/vocabulary")
+async def api_get_vocabularies():
+    """Get all vocabularies for web UI"""
+    if not HAVE_VOCABULARY:
+        return {"vocabularies": [], "error": "Vocabulary manager not available"}
+
+    try:
+        vocab_manager = get_vocabulary_manager()
+        vocabularies = vocab_manager.vocabularies
+
+        result = []
+        for vocab_id, vocab in vocabularies.items():
+            result.append({
+                "id": vocab_id,
+                "name": vocab.name,
+                "description": vocab.description,
+                "keywords": _flatten_keywords(vocab.keywords),
+                "applications": _flatten_applications(vocab.applications),
+                "prompts": vocab.prompts,
+                "priority": vocab.priority,
+            })
+        return {"vocabularies": result}
+    except Exception as e:
+        logger.error(f"Error getting vocabularies: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/vocabulary/{vocab_id}")
+async def api_get_vocabulary(vocab_id: str):
+    """Get a specific vocabulary"""
+    if not HAVE_VOCABULARY:
+        raise HTTPException(status_code=501, detail="Vocabulary manager not available")
+
+    try:
+        vocab_manager = get_vocabulary_manager()
+        if vocab_id not in vocab_manager.vocabularies:
+            raise HTTPException(status_code=404, detail="Vocabulary not found")
+        vocab = vocab_manager.vocabularies[vocab_id]
+        return {
+            "id": vocab_id,
+            "name": vocab.name,
+            "description": vocab.description,
+            "keywords": _flatten_keywords(vocab.keywords),
+            "applications": _flatten_applications(vocab.applications),
+            "prompts": vocab.prompts,
+            "priority": vocab.priority,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting vocabulary {vocab_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/vocabulary/{vocab_id}")
+async def api_update_vocabulary(vocab_id: str, data: dict):
+    """Update a vocabulary"""
+    if not HAVE_VOCABULARY:
+        raise HTTPException(status_code=501, detail="Vocabulary manager not available")
+
+    try:
+        vocab_manager = get_vocabulary_manager()
+        if vocab_id not in vocab_manager.vocabularies:
+            raise HTTPException(status_code=404, detail="Vocabulary not found")
+
+        # Update the vocabulary config file
+        vocab_file = WHISPER_CONFIG_DIR / "vocabularies" / f"{vocab_id}.yaml"
+        if vocab_file.exists():
+            with open(vocab_file, 'r') as f:
+                config = yaml.safe_load(f) or {}
+
+            # Update with new data
+            if "name" in data:
+                config["name"] = data["name"]
+            if "description" in data:
+                config["description"] = data["description"]
+            if "keywords" in data:
+                config["keywords"] = data["keywords"]
+            if "applications" in data:
+                config["applications"] = data["applications"]
+            if "prompts" in data:
+                config["prompts"] = data["prompts"]
+            if "priority" in data:
+                config["priority"] = data["priority"]
+
+            # Save updated config
+            with open(vocab_file, 'w') as f:
+                yaml.safe_dump(config, f, default_flow_style=False)
+
+            # Reload vocabularies
+            vocab_manager.load_configurations()
+
+        return {"status": "success", "id": vocab_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating vocabulary {vocab_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/vocabulary/application/{app_name}")
+async def api_vocabulary_by_application(app_name: str):
+    """Get vocabulary for specific application"""
+    if not HAVE_VOCABULARY:
+        raise HTTPException(status_code=501, detail="Vocabulary manager not available")
+
+    try:
+        vocab_manager = get_vocabulary_manager()
+        # Find matching vocabulary
+        for vocab_id, vocab in vocab_manager.vocabularies.items():
+            applications = _flatten_applications(vocab.applications)
+            if app_name in applications:
+                return {
+                    "id": vocab_id,
+                    "name": vocab.name,
+                    "description": vocab.description,
+                    "keywords": _flatten_keywords(vocab.keywords),
+                }
+        raise HTTPException(status_code=404, detail="No vocabulary found for application")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting vocabulary for {app_name}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/vocabulary/context/active")
+async def api_vocabulary_active_context():
+    """Get active vocabulary context"""
+    if not HAVE_VOCABULARY:
+        return {
+            "active_vocabulary": None,
+            "current_application": None,
+            "active_keywords": [],
+            "error": "Vocabulary manager not available"
+        }
+
+    try:
+        vocab_manager = get_vocabulary_manager()
+        return {
+            "active_vocabulary": vocab_manager.current_vocabulary,
+            "current_application": vocab_manager.current_app,
+            "active_keywords": list(vocab_manager.active_keywords),
+            "total_keywords": len(vocab_manager.active_keywords),
+        }
+    except Exception as e:
+        logger.error(f"Error getting active context: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/vocabulary/statistics")
+async def api_vocabulary_statistics():
+    """Get vocabulary statistics"""
+    if not HAVE_VOCABULARY:
+        return {
+            "total_vocabularies": 0,
+            "current_vocabulary": None,
+            "active_keywords": 0,
+            "error": "Vocabulary manager not available"
+        }
+
+    try:
+        vocab_manager = get_vocabulary_manager()
+        return vocab_manager.get_vocabulary_stats()
+    except Exception as e:
+        logger.error(f"Error getting vocabulary statistics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def _flatten_keywords(keywords: dict) -> list:
+    """Flatten nested keywords dict into list"""
+    result = []
+    if isinstance(keywords, dict):
+        for category, words in keywords.items():
+            if isinstance(words, list):
+                result.extend(words)
+            elif isinstance(words, dict):
+                for w in words.values():
+                    if isinstance(w, list):
+                        result.extend(w)
+    return result
+
+
+def _flatten_applications(applications: dict) -> list:
+    """Flatten nested applications dict into list"""
+    result = []
+    if isinstance(applications, dict):
+        for category, apps in applications.items():
+            if isinstance(apps, list):
+                result.extend(apps)
+    return result
 
 
 # ============================================================================

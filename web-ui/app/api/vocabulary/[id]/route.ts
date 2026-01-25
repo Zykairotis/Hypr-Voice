@@ -1,29 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { get_vocabulary_manager } from '@/src/Hypr-Whisper/vocabulary_manager';
+
+const BRIDGE_URL = process.env.HYPR_VOICE_BRIDGE_URL || 'http://localhost:8934';
 
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const vocabularyManager = get_vocabulary_manager();
-    const vocabulary = vocabularyManager.vocabularies[params.id];
-
-    if (!vocabulary) {
-      return NextResponse.json(
-        { error: 'Vocabulary not found' },
-        { status: 404 }
-      );
-    }
-
-    return NextResponse.json({
-      name: vocabulary.name,
-      description: vocabulary.description,
-      keywords: vocabulary.keywords,
-      applications: vocabulary.applications,
-      prompts: vocabulary.prompts,
-      priority: vocabulary.priority,
+    const response = await fetch(`${BRIDGE_URL}/api/vocabulary/${params.id}`, {
+      cache: 'no-store',
     });
+    const data = await response.json();
+    return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error('Error fetching vocabulary:', error);
     return NextResponse.json(
@@ -39,12 +27,13 @@ export async function PATCH(
 ) {
   try {
     const body = await request.json();
-    const vocabularyManager = get_vocabulary_manager();
-
-    // TODO: Implement vocabulary update logic
-    // This would involve updating the YAML file
-
-    return NextResponse.json({ message: 'Vocabulary updated', data: body });
+    const response = await fetch(`${BRIDGE_URL}/api/vocabulary/${params.id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json();
+    return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error('Error updating vocabulary:', error);
     return NextResponse.json(
@@ -59,10 +48,14 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    // TODO: Implement vocabulary deletion logic
-    // This would involve deleting the YAML file
-
-    return NextResponse.json({ message: 'Vocabulary deleted' });
+    // Vocabulary deletion requires config file modification
+    return NextResponse.json(
+      {
+        error: 'Vocabulary deletion requires direct config file modification',
+        hint: 'Edit the vocabulary files in config/hypr_voice/whisper/vocabularies/',
+      },
+      { status: 501 }
+    );
   } catch (error) {
     console.error('Error deleting vocabulary:', error);
     return NextResponse.json(

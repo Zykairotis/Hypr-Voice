@@ -94,7 +94,7 @@ vocabulary:
   use_vocabulary_manager: true
   
   # Path to vocabulary configurations
-  config_path: "../../Hypr-Whisper/config"
+  config_path: "config/hypr_voice/whisper"
   
   # Vocabulary loading strategy
   preload_all: false  # Load on-demand instead

@@ -35,9 +35,10 @@ if CLAUDE_SDK_MOCK:
     logger.warning("Using mock Claude SDK implementation")
 
 # Import vocabulary manager from Hypr-Whisper
-sys.path.append(str(Path(__file__).parent.parent.parent / "Hypr-Whisper"))
+sys.path.append(str(Path(__file__).parent.parent.parent.parent.parent / "src"))
 try:
-    from vocabulary_manager import VocabularyManager
+    from hypr_voice.whisper.vocabulary.vocabulary_manager import VocabularyManager
+    from hypr_voice.whisper.paths import get_whisper_config_dir
     VOCABULARY_MANAGER_AVAILABLE = True
 except ImportError:
     VOCABULARY_MANAGER_AVAILABLE = False
@@ -78,7 +79,7 @@ class HyprlandMonitor:
         if VOCABULARY_MANAGER_AVAILABLE:
             try:
                 # Initialize with the Hypr-Whisper config path
-                config_path = Path(__file__).parent.parent.parent / "Hypr-Whisper" / "config"
+                config_path = get_whisper_config_dir()
                 self.vocabulary_manager = VocabularyManager(config_path=str(config_path))
                 logger.info("Vocabulary manager initialized")
             except Exception as e:

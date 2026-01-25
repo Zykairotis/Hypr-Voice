@@ -28,7 +28,8 @@ CONV_FILE="/tmp/hypr-agent-conv-id"
 AGENT_TIMEOUT="${HYPR_AGENT_TIMEOUT:-300}"
 
 # Audio source - use env var or read from config.yaml
-WHISPER_CONFIG="$PROJECT_DIR/src/Hypr-Whisper/config/config.yaml"
+WHISPER_CONFIG_DIR="${HYPR_VOICE_WHISPER_CONFIG_DIR:-$PROJECT_DIR/config/hypr_voice/whisper}"
+WHISPER_CONFIG="$WHISPER_CONFIG_DIR/config.yaml"
 if [[ -z "${HYPR_AGENT_MIC:-}" ]] && [[ -f "$WHISPER_CONFIG" ]]; then
     # Extract pulseaudio_source value between quotes
     AUDIO_SOURCE=$(grep "pulseaudio_source:" "$WHISPER_CONFIG" | sed 's/.*pulseaudio_source: *"\([^"]*\)".*/\1/')
@@ -214,9 +215,8 @@ start_recording() {
     # Use configured audio source from config.yaml or env var
     log "Using audio source: $AUDIO_SOURCE"
     
-    # Start recording in background using arecord (same as working hypr-voice-record.sh)
-    # Use -f cd for CD quality (16-bit stereo 44100Hz) which is widely compatible
-    arecord -f cd -t wav "$AUDIO_FILE" 2>/dev/null &
+    # Start recording in background using 16kHz mono PCM for faster processing
+    arecord -f S16_LE -c 1 -r 16000 -t wav "$AUDIO_FILE" 2>/dev/null &
     echo $! > /tmp/hypr-agent-recorder.pid
     
     log "Recording started (PID: $(cat /tmp/hypr-agent-recorder.pid 2>/dev/null || echo 'unknown'))"
@@ -304,15 +304,25 @@ transcribe_audio() {
         --max-time 30)
     
     _tlog "Upload response: $upload_response"
+
+    # If server returned final text immediately (FLOW sync), use it
+    local immediate_status
+    local immediate_text
+    immediate_status=$(echo "$upload_response" | jq -r '.status // empty' 2>/dev/null)
+    immediate_text=$(echo "$upload_response" | jq -r '.text // empty' 2>/dev/null)
+    if [[ "$immediate_status" == "completed" && -n "$immediate_text" ]]; then
+        echo "$immediate_text"
+        return 0
+    fi
     
     # Step 3: Poll for result (with timeout)
-    local max_attempts=30
+    local max_attempts=100
     local attempt=0
     local final_text=""
     local status_response=""
     
     while [[ $attempt -lt $max_attempts ]]; do
-        sleep 1
+        sleep 0.2
         
         status_response=$(curl -s "http://localhost:$WHISPER_PORT/sessions/$session_id" \
             --max-time 5)

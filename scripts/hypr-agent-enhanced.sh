@@ -31,7 +31,8 @@ CONV_FILE="/tmp/hypr-agent-enhanced-conv-id"
 AGENT_TIMEOUT="${HYPR_AGENT_TIMEOUT:-300}"
 
 # Audio source from config
-WHISPER_CONFIG="$PROJECT_DIR/src/Hypr-Whisper/config/config.yaml"
+WHISPER_CONFIG_DIR="${HYPR_VOICE_WHISPER_CONFIG_DIR:-$PROJECT_DIR/config/hypr_voice/whisper}"
+WHISPER_CONFIG="$WHISPER_CONFIG_DIR/config.yaml"
 if [[ -z "${HYPR_AGENT_MIC:-}" ]] && [[ -f "$WHISPER_CONFIG" ]]; then
     AUDIO_SOURCE=$(grep "pulseaudio_source:" "$WHISPER_CONFIG" | sed 's/.*pulseaudio_source: *"\([^"]*\)".*/\1/')
 fi
@@ -286,7 +287,7 @@ start_recording() {
 
     # Start recording
     log "Using audio source: $AUDIO_SOURCE"
-    arecord -f cd -t wav "$AUDIO_FILE" 2>/dev/null &
+    arecord -f S16_LE -c 1 -r 16000 -t wav "$AUDIO_FILE" 2>/dev/null &
     echo $! > /tmp/hypr-agent-enhanced-recorder.pid
 
     log "Recording started (PID: $(cat /tmp/hypr-agent-enhanced-recorder.pid 2>/dev/null || echo 'unknown'))"
@@ -364,13 +365,23 @@ transcribe_audio() {
         -F "audio_file=@$audio_path" \
         --max-time 30)
 
+    # If server returned final text immediately (FLOW sync), use it
+    local immediate_status
+    local immediate_text
+    immediate_status=$(echo "$upload_response" | jq -r '.status // empty' 2>/dev/null)
+    immediate_text=$(echo "$upload_response" | jq -r '.text // empty' 2>/dev/null)
+    if [[ "$immediate_status" == "completed" && -n "$immediate_text" ]]; then
+        echo "$immediate_text"
+        return 0
+    fi
+
     # Poll for result
-    local max_attempts=30
+    local max_attempts=100
     local attempt=0
     local final_text=""
 
     while [[ $attempt -lt $max_attempts ]]; do
-        sleep 1
+        sleep 0.2
 
         local status_response
         status_response=$(curl -s "http://localhost:$WHISPER_PORT/sessions/$session_id" \

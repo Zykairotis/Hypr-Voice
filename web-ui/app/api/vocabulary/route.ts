@@ -1,21 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { get_vocabulary_manager } from '@/src/Hypr-Whisper/vocabulary_manager';
+
+const BRIDGE_URL = process.env.HYPR_VOICE_BRIDGE_URL || 'http://localhost:8934';
 
 export async function GET(request: NextRequest) {
   try {
-    const vocabularyManager = get_vocabulary_manager();
-    const vocabularies = vocabularyManager.vocabularies;
-
-    const result = Object.entries(vocabularies).map(([id, vocab]) => ({
-      name: vocab.name,
-      description: vocab.description,
-      keywords: vocab.keywords,
-      applications: vocab.applications,
-      prompts: vocab.prompts,
-      priority: vocab.priority,
-    }));
-
-    return NextResponse.json(result);
+    const response = await fetch(`${BRIDGE_URL}/api/config/vocabulary`, {
+      cache: 'no-store',
+    });
+    const data = await response.json();
+    return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error('Error fetching vocabularies:', error);
     return NextResponse.json(
@@ -28,12 +21,13 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const vocabularyManager = get_vocabulary_manager();
-
-    // TODO: Implement vocabulary creation logic
-    // This would involve creating a new YAML file in the vocabularies directory
-
-    return NextResponse.json({ message: 'Vocabulary created', data: body });
+    const response = await fetch(`${BRIDGE_URL}/api/config/vocabulary`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json();
+    return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error('Error creating vocabulary:', error);
     return NextResponse.json(

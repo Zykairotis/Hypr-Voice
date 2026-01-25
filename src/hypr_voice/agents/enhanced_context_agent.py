@@ -8,7 +8,7 @@ Provides intelligent responses using active window context, clipboard data, and 
 import asyncio
 import logging
 import uuid
-from typing import AsyncIterator, Optional, Dict, Any
+from typing import AsyncIterator, Optional, Dict, Any, List
 from datetime import datetime
 
 from ..services.sdk_compat import (

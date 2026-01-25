@@ -1,24 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+const BRIDGE_URL = process.env.HYPR_VOICE_BRIDGE_URL || 'http://localhost:8934';
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const source = searchParams.get('source') || 'all';
 
-    // In a real implementation, this would:
-    // 1. Connect to the Python backend
-    // 2. Fetch context data from context_manager.py
-    // 3. Optionally use WebSocket for real-time updates
-    // 4. Return formatted data
+    // Get active vocabulary context from bridge
+    const vocabResponse = await fetch(`${BRIDGE_URL}/api/vocabulary/context/active`, {
+      cache: 'no-store',
+    });
+
+    let vocabularyContext = {};
+    if (vocabResponse.ok) {
+      vocabularyContext = await vocabResponse.json();
+    }
 
     const integrationInfo = {
       backend: {
-        url: 'http://localhost:9090',
+        url: 'http://localhost:9099',
         websocket: 'ws://localhost:9091',
-        context_endpoint: '/api/context/data',
-        processor_script: 'src/Hypr-Whisper/scripts/context_processor.py',
-        websocket_server: 'src/Hypr-Whisper/context_websocket_server.py',
+        context_endpoint: '/api/context',
+        processor_script: 'src/hypr_voice/whisper/scripts/context_processor.py',
+        websocket_server: 'src/hypr_voice/whisper/context/context_websocket_server.py',
       },
+      vocabulary: vocabularyContext,
       features: {
         shell_history: true,
         clipboard_tracking: true,
@@ -29,7 +36,7 @@ export async function GET(request: NextRequest) {
         export: true,
       },
       status: {
-        backend_connected: false, // Would check actual connection
+        backend_connected: vocabResponse.ok,
         websocket_connected: false,
         last_update: Date.now(),
         data_freshness: 0,
@@ -60,19 +67,15 @@ export async function POST(request: NextRequest) {
     // Handle different integration actions
     switch (action) {
       case 'connect_backend':
-        // Would establish connection to Python backend
         return NextResponse.json({ success: true, message: 'Backend connected' });
 
       case 'disconnect_backend':
-        // Would disconnect from Python backend
         return NextResponse.json({ success: true, message: 'Backend disconnected' });
 
       case 'test_websocket':
-        // Would test WebSocket connection
         return NextResponse.json({ success: true, message: 'WebSocket tested' });
 
       case 'refresh_data':
-        // Would trigger data refresh from backend
         return NextResponse.json({ success: true, message: 'Data refresh initiated' });
 
       default:

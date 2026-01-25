@@ -1,0 +1,53 @@
+# Enhanced Context Manager Configuration
+# Controls data sources and vocabulary extraction behavior
+
+# Data source configuration
+sources:
+  chat_history:
+    enabled: true
+    max_sessions: 10
+    logs_dir: "/home/mewtwo/Zykairotis/Hypr-Voice/logs"  # Absolute path
+    extract_from:
+      - user      # Extract from user messages (voice transcriptions)
+
+  clipboard:
+    enabled: true
+    max_entries: 10
+    tool: "cliphist"  # Options: cliphist, wl-paste
+
+  window:
+    enabled: true
+    backend: "auto"  # Options: auto, hyprland, sway, gnome, kde, x11, manual
+    monitor_events: false  # Future: Event-driven monitoring
+    extract_from_title:
+      - file_paths     # Extract file paths from window titles
+      - git_branches   # Extract Git branch names
+      - urls           # Extract URLs from titles
+
+  shell:
+    enabled: true
+    command_count: 40
+    sources:
+      - zsh
+      - bash
+
+  custom_dictionary:
+    enabled: true
+    path: "custom_dictionary.yaml"
+
+# Extractor configuration
+extractor:
+  target_vocabulary_size: 100
+  min_word_length: 2
+  enable_compound_patterns: true
+  cache_size: 1000
+
+# Performance tuning
+performance:
+  use_lru_cache: true
+  parallel_extraction: false  # Future: Async parallel extraction
+  early_exit: true
+
+# Cache configuration
+cache:
+  ttl_seconds: 5  # Cache vocabulary for 5 seconds

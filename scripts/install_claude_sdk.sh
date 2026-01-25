@@ -148,7 +148,7 @@ echo
 echo -e "${BLUE}Configuration files:${NC}"
 echo -e "  - Agent config: ${YELLOW}config/hypr_voice/config.yaml${NC}"
 echo -e "  - Claude SDK: ${YELLOW}config/hypr_voice/claude-sdk.yaml${NC}"
-echo -e "  - Vocabulary: ${YELLOW}src/Hypr-Whisper/config/vocabulary.yaml${NC}"
+echo -e "  - Vocabulary: ${YELLOW}config/hypr_voice/whisper/vocabulary.yaml${NC}"
 echo
 echo -e "${GREEN}The system is now configured to:${NC}"
 echo -e "  • Use Claude Code SDK instead of API"

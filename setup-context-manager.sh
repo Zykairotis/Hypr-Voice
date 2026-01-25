@@ -17,7 +17,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Check if running in the correct directory
-if [ ! -f "src/Hypr-Whisper/context_manager.py" ]; then
+if [ ! -f "src/hypr_voice/whisper/core/context_manager.py" ]; then
     echo -e "${RED}Error: Please run this script from the project root directory${NC}"
     exit 1
 fi
@@ -72,8 +72,8 @@ echo ""
 
 # Step 4: Make scripts executable
 echo "Step 4: Making scripts executable..."
-chmod +x src/Hypr-Whisper/context_websocket_server.py
-chmod +x src/Hypr-Whisper/scripts/context_processor.py
+chmod +x src/hypr_voice/whisper/context/context_websocket_server.py
+chmod +x src/hypr_voice/whisper/scripts/context_processor.py
 
 echo -e "${GREEN}✓ Made scripts executable${NC}"
 echo ""
@@ -113,14 +113,14 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
 
     sudo tee /etc/systemd/system/context-processor.service > /dev/null <<EOF
 [Unit]
-Description=Context Processor for Hypr-Whisper
+Description=Context Processor for Hypr-Voice
 After=network.target
 
 [Service]
 Type=simple
 User=$USER
-WorkingDirectory=$(pwd)/src/Hypr-Whisper
-ExecStart=/usr/bin/python3 scripts/context_processor.py
+WorkingDirectory=$(pwd)
+ExecStart=/usr/bin/python3 src/hypr_voice/whisper/scripts/context_processor.py
 Restart=always
 RestartSec=5
 StandardOutput=append:$(pwd)/logs/context-processor.log
@@ -172,13 +172,12 @@ cat > start-context.sh << 'EOF'
 echo "Starting Context Manager..."
 
 # Start context processor in background
-cd src/Hypr-Whisper
-python3 scripts/context_processor.py > ../../logs/context-processor.log 2>&1 &
+python3 src/hypr_voice/whisper/scripts/context_processor.py > logs/context-processor.log 2>&1 &
 PROCESSOR_PID=$!
 echo "Context processor started (PID: $PROCESSOR_PID)"
 
 # Start WebSocket server in background
-python3 context_websocket_server.py > ../../logs/websocket.log 2>&1 &
+python3 src/hypr_voice/whisper/context/context_websocket_server.py > logs/websocket.log 2>&1 &
 WEBSOCKET_PID=$!
 echo "WebSocket server started (PID: $WEBSOCKET_PID)"
 

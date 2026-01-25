@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { get_context_manager } from '@/src/Hypr-Whisper/context_manager';
+
+const BRIDGE_URL = process.env.HYPR_VOICE_BRIDGE_URL || 'http://localhost:8934';
 
 export async function GET(request: NextRequest) {
   try {
-    const contextManager = get_context_manager();
-    const context = contextManager.get_comprehensive_context();
-
-    return NextResponse.json(context);
+    const response = await fetch(`${BRIDGE_URL}/api/context`, {
+      cache: 'no-store',
+    });
+    const data = await response.json();
+    return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error('Error fetching context:', error);
     return NextResponse.json(

@@ -4,7 +4,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-HYPR_DIR="$ROOT_DIR/src/Hypr-Whisper"
+WHISPER_SCRIPTS_DIR="$ROOT_DIR/scripts"
 UI_DIR="$ROOT_DIR/web-ui"
 PID_CONTEXT="/tmp/hypr-voice-context-ws.pid"
 PID_UI_WRAPPER="/tmp/hypr-voice-ui-wrapper.pid"
@@ -12,10 +12,29 @@ PID_ORCHESTRATOR="/tmp/hypr-voice-orchestrator.pid"
 
 log() { printf "[start-all] %s\n" "$*"; }
 
+# Load environment variables once for all services
+MODE="LOCAL"
+if [ -f "$ROOT_DIR/.env" ]; then
+  set -a
+  source "$ROOT_DIR/.env"
+  set +a
+  MODE="${MODE:-LOCAL}"
+  log "Loaded .env file (MODE=$MODE)"
+fi
+MODE="${MODE:-LOCAL}"
+MODE_UPPER="${MODE^^}"
+export MODE
+
+# Optional: Wispr Flow API server (9095)
+start_flow() {
+  log "Starting Wispr Flow API server (9095)..."
+  (cd "$ROOT_DIR" && ./scripts/start_wispr_flow.sh start)
+}
+
 # 1) Hybrid Whisper server (9099)
 start_hybrid() {
   log "Starting hybrid server (9099)..."
-  (cd "$HYPR_DIR" && ./scripts/start_hybrid_server.sh start)
+  (cd "$ROOT_DIR" && "$WHISPER_SCRIPTS_DIR/start_hybrid_server.sh" start)
 }
 
 # 2) Context WebSocket (9091)
@@ -33,8 +52,11 @@ start_context_ws() {
   source "$ROOT_DIR/.venv/bin/activate"
 
   log "Starting context_websocket_server.py (9091)..."
-  cd "$HYPR_DIR"
-  nohup python context_websocket_server.py > /tmp/hypr-voice-context-ws.log 2>&1 &
+  # Run from project root for module imports - file moved to src/hypr_voice/whisper/context/
+  # Run directly as script to avoid parent package import issues
+  cd "$ROOT_DIR"
+  export PYTHONPATH="$ROOT_DIR/src:$PYTHONPATH"
+  nohup python "$ROOT_DIR/src/hypr_voice/whisper/context/context_websocket_server.py" > /tmp/hypr-voice-context-ws.log 2>&1 &
   echo $! > "$PID_CONTEXT"
   log "Context WS pid $(cat "$PID_CONTEXT"), logs: /tmp/hypr-voice-context-ws.log"
 }
@@ -101,12 +123,18 @@ start_ui_bridge() {
 
 case "${1:-start}" in
   start)
+    if [ "$MODE_UPPER" = "FLOW" ]; then
+      start_flow
+    fi
     start_hybrid
     start_context_ws
     start_orchestrator
     start_ui_bridge
     log "All services started."
     log "Hybrid:      http://localhost:9099  (WS ws://localhost:9099/ws/{session_id})"
+    if [ "$MODE_UPPER" = "FLOW" ]; then
+      log "Wispr Flow:  http://localhost:${WISPR_FLOW_PORT:-9095}  (API /transcribe)"
+    fi
     log "Context:     ws://localhost:9091/ws"
     log "Orchestrator: http://localhost:9093  (Agent SDK orchestrator)"
     log "Bridge:      http://localhost:8934  (WS proxy /ws/context, /ws/orchestrator)"
@@ -133,10 +161,16 @@ case "${1:-start}" in
       log "Stopped context WS"
     fi
     # stop hybrid server
-    (cd "$HYPR_DIR" && ./scripts/start_hybrid_server.sh stop) || true
+    (cd "$ROOT_DIR" && "$WHISPER_SCRIPTS_DIR/start_hybrid_server.sh" stop) || true
+    if [ "$MODE_UPPER" = "FLOW" ]; then
+      (cd "$ROOT_DIR" && ./scripts/start_wispr_flow.sh stop) || true
+    fi
     ;;
   status)
-    log "Hybrid server status:"; (cd "$HYPR_DIR" && ./scripts/start_hybrid_server.sh status || true)
+    log "Hybrid server status:"; (cd "$ROOT_DIR" && "$WHISPER_SCRIPTS_DIR/start_hybrid_server.sh" status || true)
+    if [ "$MODE_UPPER" = "FLOW" ]; then
+      log "Wispr Flow server status:"; (cd "$ROOT_DIR" && ./scripts/start_wispr_flow.sh status || true)
+    fi
     if [ -f "$PID_CONTEXT" ] && kill -0 "$(cat "$PID_CONTEXT")" 2>/dev/null; then
       log "Context WS running (pid $(cat "$PID_CONTEXT"))"
     else
@@ -158,4 +192,3 @@ case "${1:-start}" in
     exit 1
     ;;
 esac
-
