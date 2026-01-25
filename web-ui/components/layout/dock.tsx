@@ -2,13 +2,13 @@
 
 import { useState } from "react";
 import { motion, useMotionValue, useSpring, useTransform } from "framer-motion";
-import { Mic, Bot, Sparkles, Mic2, Server, Monitor, BarChart3 } from "lucide-react";
+import { Mic, Bot, Sparkles, Mic2, Server, Monitor, BarChart3, Network } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 interface DockProps {
-  activeView?: "whisper" | "agent" | "skills" | "tts" | "vocabulary" | "mcp" | "analytics";
-  onViewChange?: (view: "whisper" | "agent" | "skills" | "tts" | "vocabulary" | "mcp" | "analytics") => void;
+  activeView?: "whisper" | "agent" | "orchestrator" | "skills" | "tts" | "vocabulary" | "mcp" | "analytics";
+  onViewChange?: (view: "whisper" | "agent" | "orchestrator" | "skills" | "tts" | "vocabulary" | "mcp" | "analytics") => void;
 }
 
 const DOCK_SIZE = 56;
@@ -33,6 +33,13 @@ export default function Dock({ activeView, onViewChange }: DockProps) {
       icon: Bot,
       label: "Hypr-Voice Agent",
       gradient: "from-purple-400 via-pink-400 to-rose-400",
+      href: "/"
+    },
+    {
+      id: "orchestrator",
+      icon: Network,
+      label: "Agent Orchestrator",
+      gradient: "from-violet-400 via-purple-400 to-indigo-400",
       href: "/"
     },
     {

@@ -3,15 +3,10 @@
 import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Activity } from "lucide-react";
+import { endpoints } from "@/lib/endpoints";
 
-// Configurable agent endpoints
-const AGENT_HOST = "localhost";
-const AGENT_PORT = 8922;
-const AGENT_API_URL = `http://${AGENT_HOST}:${AGENT_PORT}`;
-const AGENT_WEBSOCKET_URL = `ws://${AGENT_HOST}:${AGENT_PORT}/ws`;
-
-// Note: Agent system is under development - keeping it offline for now
-const AGENT_STATUS_OVERRIDE = "offline";
+const AGENT_API_URL = endpoints.api.orchestratorStatus;
+const AGENT_WEBSOCKET_URL = endpoints.ws.orchestrator;
 
 interface AgentStats {
   status: "online" | "offline" | "error";
@@ -19,15 +14,32 @@ interface AgentStats {
 
 export default function AgentStatus() {
   const [stats, setStats] = useState<AgentStats>({
-    status: AGENT_STATUS_OVERRIDE,
+    status: "offline",
   });
 
   useEffect(() => {
-    // Agent system is under development - keeping status offline
-    // fetchStatus();
-    // const interval = setInterval(fetchStatus, 3000);
-    // return () => clearInterval(interval);
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 5000);
+    return () => clearInterval(interval);
   }, []);
+
+  const fetchStatus = async () => {
+    try {
+      const response = await fetch(AGENT_API_URL, {
+        signal: AbortSignal.timeout(3000),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setStats({
+          status: (data.status === "healthy" || data.status === "online") ? "online" : "offline",
+        });
+      } else {
+        setStats({ status: "offline" });
+      }
+    } catch {
+      setStats({ status: "offline" });
+    }
+  };
 
   const statusColors = {
     online: "bg-green-500/20 text-green-500 border-green-500/30",
@@ -60,11 +72,6 @@ export default function AgentStatus() {
         </div>
       </div>
 
-      {/* Development Notice */}
-      <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-sm">
-        <p className="text-yellow-500/80">🔧 Agent system is under development. Status kept offline for now.</p>
-      </div>
     </div>
   );
 }
-

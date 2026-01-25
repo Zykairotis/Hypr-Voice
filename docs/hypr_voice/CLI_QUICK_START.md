@@ -137,7 +137,7 @@ paplay var/hypr_voice/cli_tts_output/history/claude_response_*.wav
 
 ### Claude API Key Not Set
 ```bash
-export ANTHROPIC_API_KEY="sk-ant-api03-..."
+export ANTHROPIC_API_KEY="your-anthropic-api-key"
 ```
 
 ### Kokoro Server Not Running

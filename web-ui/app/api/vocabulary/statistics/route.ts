@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { get_vocabulary_manager } from '@/src/Hypr-Whisper/vocabulary_manager';
+
+const BRIDGE_URL = process.env.HYPR_VOICE_BRIDGE_URL || 'http://localhost:8934';
 
 export async function GET(request: NextRequest) {
   try {
-    const vocabularyManager = get_vocabulary_manager();
-    const stats = vocabularyManager.get_vocabulary_stats();
-
-    return NextResponse.json(stats);
+    const response = await fetch(`${BRIDGE_URL}/api/vocabulary/statistics`, {
+      cache: 'no-store',
+    });
+    const data = await response.json();
+    return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error('Error fetching statistics:', error);
     return NextResponse.json(

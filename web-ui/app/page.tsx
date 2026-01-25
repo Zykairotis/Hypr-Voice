@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
-import { Mic, Bot, Activity, Sparkles, Mic2, Server, Monitor } from "lucide-react";
+import { Mic, Bot, Activity, Sparkles, Mic2, Server, Monitor, Network } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import WhisperPanel from "@/components/whisper/whisper-panel";
 import AgentPanel from "@/components/agent/agent-panel";
@@ -12,13 +12,70 @@ import VocabularyDashboard from "@/components/vocabulary/dashboard";
 import TTSControlPanel from "@/components/tts/tts-control-panel";
 import MCPDashboard from "@/components/mcp/dashboard/MCPDashboard";
 import AnalyticsDashboard from "@/components/analytics/AnalyticsDashboard";
+import OrchestratorPanel from "@/components/orchestrator/orchestrator-panel";
+import { endpoints } from "@/lib/endpoints";
 
 export default function Dashboard() {
-  const [activeView, setActiveView] = useState<"whisper" | "agent" | "skills" | "vocabulary" | "tts" | "mcp" | "analytics">("whisper");
+  const [activeView, setActiveView] = useState<"whisper" | "agent" | "orchestrator" | "skills" | "vocabulary" | "tts" | "mcp" | "analytics">("whisper");
   const [whisperStatus, setWhisperStatus] = useState<"online" | "offline" | "error">("offline");
   const [agentStatus, setAgentStatus] = useState<"online" | "offline" | "error">("offline");
+  const [orchestratorStatus, setOrchestratorStatus] = useState<"online" | "offline" | "error">("offline");
   const [isClient, setIsClient] = useState(false);
   const [isDarkReader, setIsDarkReader] = useState(false);
+
+  // Independent status checks for header indicators
+  useEffect(() => {
+    const checkAllStatuses = async () => {
+      // Check Whisper status
+      try {
+        const whisperRes = await fetch(endpoints.api.whisperStatus, {
+          signal: AbortSignal.timeout(2000),
+        });
+        if (whisperRes.ok) {
+          const data = await whisperRes.json();
+          setWhisperStatus(data.status === "online" ? "online" : "offline");
+        } else {
+          setWhisperStatus("offline");
+        }
+      } catch {
+        setWhisperStatus("offline");
+      }
+
+      // Check Orchestrator status
+      try {
+        const orchRes = await fetch(endpoints.api.orchestratorStatus, {
+          signal: AbortSignal.timeout(2000),
+        });
+        if (orchRes.ok) {
+          const data = await orchRes.json();
+          setOrchestratorStatus((data.status === "online" || data.status === "healthy") ? "online" : "offline");
+        } else {
+          setOrchestratorStatus("offline");
+        }
+      } catch {
+        setOrchestratorStatus("offline");
+      }
+
+      // Check Agent status (same as orchestrator now)
+      try {
+        const agentRes = await fetch(endpoints.api.orchestratorStatus, {
+          signal: AbortSignal.timeout(2000),
+        });
+        if (agentRes.ok) {
+          const data = await agentRes.json();
+          setAgentStatus((data.status === "online" || data.status === "healthy") ? "online" : "offline");
+        } else {
+          setAgentStatus("offline");
+        }
+      } catch {
+        setAgentStatus("offline");
+      }
+    };
+
+    checkAllStatuses();
+    const interval = setInterval(checkAllStatuses, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     setIsClient(true);
@@ -85,6 +142,7 @@ export default function Dashboard() {
             <div className="flex items-center gap-3">
               <StatusIndicator label="Whisper" status={whisperStatus} icon={Mic} />
               <StatusIndicator label="Agent" status={agentStatus} icon={Bot} />
+              <StatusIndicator label="Orchestrator" status={orchestratorStatus} icon={Network} />
               <StatusIndicator label="Skills" status="online" icon={Sparkles} />
               <StatusIndicator label="Vocabulary" status="online" icon={Monitor} />
               <StatusIndicator label="TTS" status="online" icon={Mic2} />
@@ -128,6 +186,23 @@ export default function Dashboard() {
               }}
             >
               <AgentPanel onStatusChange={setAgentStatus} />
+            </motion.div>
+          )}
+
+          {activeView === "orchestrator" && (
+            <motion.div
+              key="orchestrator"
+              initial={{ opacity: 0, x: -40, filter: "blur(10px)" }}
+              animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
+              exit={{ opacity: 0, x: 40, filter: "blur(10px)" }}
+              transition={{
+                type: "spring",
+                stiffness: 300,
+                damping: 30,
+                mass: 0.8
+              }}
+            >
+              <OrchestratorPanel onStatusChange={setOrchestratorStatus} />
             </motion.div>
           )}
 

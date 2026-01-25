@@ -12,13 +12,55 @@ import json
 from pathlib import Path
 import asyncio
 import aiohttp
+import os
+import sys
+from loguru import logger
+
+# Hypr-Voice imports for vocabulary API
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
+try:
+    from hypr_voice.whisper.vocabulary.vocabulary_manager import get_vocabulary_manager
+    from hypr_voice.whisper.core.context_manager import get_context_manager
+    HAVE_VOCABULARY = True
+except ImportError as e:
+    logger.warning(f"Vocabulary manager not available: {e}")
+    HAVE_VOCABULARY = False
+
+# Configure Loguru
+LOG_DIR = os.getenv("HYPR_VOICE_LOG_DIR", "/tmp/hypr-voice")
+LOG_FILE = os.path.join(LOG_DIR, "hypr-voice.log")
+
+# Ensure log directory exists
+os.makedirs(LOG_DIR, exist_ok=True)
+
+# Remove default handler and add file handler
+logger.remove()
+logger.add(
+    sys.stderr,
+    format="<green>{time:HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+    level="INFO"
+)
+logger.add(
+    LOG_FILE,
+    rotation="10 MB",
+    retention="1 day",
+    format="{time:HH:mm:ss.SSS} [bridge] [{level}] {message}",
+    level="INFO"
+)
+
+logger.info("Bridge API starting up...")
 
 app = FastAPI(title="Hypr-Voice Web UI Bridge", version="1.0.0")
 
 # CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8933", "http://localhost:3000", "http://localhost:3001"],
+    allow_origins=[
+        "http://localhost:8933",
+        "http://127.0.0.1:8933",
+        "http://localhost:3000",
+        "http://localhost:3001",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -26,8 +68,9 @@ app.add_middleware(
 
 # Configuration paths
 BASE_DIR = Path(__file__).parent.parent.parent
-WHISPER_CONFIG_DIR = BASE_DIR / "src/Hypr-Whisper/config"
+WHISPER_CONFIG_DIR = BASE_DIR / "config" / "hypr_voice" / "whisper"
 AGENT_CONFIG_DIR = BASE_DIR / "config/hypr_voice"
+ORCHESTRATOR_URL = os.getenv("ORCHESTRATOR_URL", "http://localhost:9093")
 
 # Pydantic models for request/response
 class AudioConfig(BaseModel):
@@ -110,7 +153,7 @@ async def get_whisper_status():
     """Get Whisper server status"""
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get("http://localhost:9090/", timeout=2) as resp:
+            async with session.get("http://localhost:9099/", timeout=2) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     return {"status": "online", **data}
@@ -123,7 +166,7 @@ async def get_audio_devices():
     """Get available audio input devices"""
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get("http://localhost:9090/api/audio/devices") as resp:
+            async with session.get("http://localhost:9099/api/audio/devices") as resp:
                 if resp.status == 200:
                     return await resp.json()
     except Exception:
@@ -407,28 +450,225 @@ async def update_vocabulary_config(config: VocabularyConfig):
     """Update vocabulary configuration"""
     try:
         config_path = WHISPER_CONFIG_DIR / "vocabulary.yaml"
-        
+
         # Load existing config
         existing = {}
         if config_path.exists():
             with open(config_path, 'r') as f:
                 existing = yaml.safe_load(f) or {}
-        
+
         # Update config
         if "settings" not in existing:
             existing["settings"] = {}
         if "post_processing" not in existing["settings"]:
             existing["settings"]["post_processing"] = {}
-        
+
         existing["settings"]["post_processing"]["enabled"] = config.enabled
-        
+
         # Save config
         with open(config_path, 'w') as f:
             yaml.safe_dump(existing, f, default_flow_style=False)
-        
+
         return {"status": "success", "message": "Vocabulary configuration updated"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# VOCABULARY API ENDPOINTS
+# ============================================================================
+
+@app.get("/api/vocabulary")
+async def api_get_vocabularies():
+    """Get all vocabularies for web UI"""
+    if not HAVE_VOCABULARY:
+        return {"vocabularies": [], "error": "Vocabulary manager not available"}
+
+    try:
+        vocab_manager = get_vocabulary_manager()
+        vocabularies = vocab_manager.vocabularies
+
+        result = []
+        for vocab_id, vocab in vocabularies.items():
+            result.append({
+                "id": vocab_id,
+                "name": vocab.name,
+                "description": vocab.description,
+                "keywords": _flatten_keywords(vocab.keywords),
+                "applications": _flatten_applications(vocab.applications),
+                "prompts": vocab.prompts,
+                "priority": vocab.priority,
+            })
+        return {"vocabularies": result}
+    except Exception as e:
+        logger.error(f"Error getting vocabularies: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/vocabulary/{vocab_id}")
+async def api_get_vocabulary(vocab_id: str):
+    """Get a specific vocabulary"""
+    if not HAVE_VOCABULARY:
+        raise HTTPException(status_code=501, detail="Vocabulary manager not available")
+
+    try:
+        vocab_manager = get_vocabulary_manager()
+        if vocab_id not in vocab_manager.vocabularies:
+            raise HTTPException(status_code=404, detail="Vocabulary not found")
+        vocab = vocab_manager.vocabularies[vocab_id]
+        return {
+            "id": vocab_id,
+            "name": vocab.name,
+            "description": vocab.description,
+            "keywords": _flatten_keywords(vocab.keywords),
+            "applications": _flatten_applications(vocab.applications),
+            "prompts": vocab.prompts,
+            "priority": vocab.priority,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting vocabulary {vocab_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/vocabulary/{vocab_id}")
+async def api_update_vocabulary(vocab_id: str, data: dict):
+    """Update a vocabulary"""
+    if not HAVE_VOCABULARY:
+        raise HTTPException(status_code=501, detail="Vocabulary manager not available")
+
+    try:
+        vocab_manager = get_vocabulary_manager()
+        if vocab_id not in vocab_manager.vocabularies:
+            raise HTTPException(status_code=404, detail="Vocabulary not found")
+
+        # Update the vocabulary config file
+        vocab_file = WHISPER_CONFIG_DIR / "vocabularies" / f"{vocab_id}.yaml"
+        if vocab_file.exists():
+            with open(vocab_file, 'r') as f:
+                config = yaml.safe_load(f) or {}
+
+            # Update with new data
+            if "name" in data:
+                config["name"] = data["name"]
+            if "description" in data:
+                config["description"] = data["description"]
+            if "keywords" in data:
+                config["keywords"] = data["keywords"]
+            if "applications" in data:
+                config["applications"] = data["applications"]
+            if "prompts" in data:
+                config["prompts"] = data["prompts"]
+            if "priority" in data:
+                config["priority"] = data["priority"]
+
+            # Save updated config
+            with open(vocab_file, 'w') as f:
+                yaml.safe_dump(config, f, default_flow_style=False)
+
+            # Reload vocabularies
+            vocab_manager.load_configurations()
+
+        return {"status": "success", "id": vocab_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating vocabulary {vocab_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/vocabulary/application/{app_name}")
+async def api_vocabulary_by_application(app_name: str):
+    """Get vocabulary for specific application"""
+    if not HAVE_VOCABULARY:
+        raise HTTPException(status_code=501, detail="Vocabulary manager not available")
+
+    try:
+        vocab_manager = get_vocabulary_manager()
+        # Find matching vocabulary
+        for vocab_id, vocab in vocab_manager.vocabularies.items():
+            applications = _flatten_applications(vocab.applications)
+            if app_name in applications:
+                return {
+                    "id": vocab_id,
+                    "name": vocab.name,
+                    "description": vocab.description,
+                    "keywords": _flatten_keywords(vocab.keywords),
+                }
+        raise HTTPException(status_code=404, detail="No vocabulary found for application")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting vocabulary for {app_name}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/vocabulary/context/active")
+async def api_vocabulary_active_context():
+    """Get active vocabulary context"""
+    if not HAVE_VOCABULARY:
+        return {
+            "active_vocabulary": None,
+            "current_application": None,
+            "active_keywords": [],
+            "error": "Vocabulary manager not available"
+        }
+
+    try:
+        vocab_manager = get_vocabulary_manager()
+        return {
+            "active_vocabulary": vocab_manager.current_vocabulary,
+            "current_application": vocab_manager.current_app,
+            "active_keywords": list(vocab_manager.active_keywords),
+            "total_keywords": len(vocab_manager.active_keywords),
+        }
+    except Exception as e:
+        logger.error(f"Error getting active context: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/vocabulary/statistics")
+async def api_vocabulary_statistics():
+    """Get vocabulary statistics"""
+    if not HAVE_VOCABULARY:
+        return {
+            "total_vocabularies": 0,
+            "current_vocabulary": None,
+            "active_keywords": 0,
+            "error": "Vocabulary manager not available"
+        }
+
+    try:
+        vocab_manager = get_vocabulary_manager()
+        return vocab_manager.get_vocabulary_stats()
+    except Exception as e:
+        logger.error(f"Error getting vocabulary statistics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def _flatten_keywords(keywords: dict) -> list:
+    """Flatten nested keywords dict into list"""
+    result = []
+    if isinstance(keywords, dict):
+        for category, words in keywords.items():
+            if isinstance(words, list):
+                result.extend(words)
+            elif isinstance(words, dict):
+                for w in words.values():
+                    if isinstance(w, list):
+                        result.extend(w)
+    return result
+
+
+def _flatten_applications(applications: dict) -> list:
+    """Flatten nested applications dict into list"""
+    result = []
+    if isinstance(applications, dict):
+        for category, apps in applications.items():
+            if isinstance(apps, list):
+                result.extend(apps)
+    return result
 
 
 # ============================================================================
@@ -440,7 +680,7 @@ async def get_agent_status():
     """Get Agent server status"""
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get("http://localhost:8922/agents/list", timeout=2) as resp:
+            async with session.get("http://localhost:9093/agents", timeout=2) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     return {"status": "online", "agents": data.get("agents", [])}
@@ -491,7 +731,7 @@ async def get_context():
         async with aiohttp.ClientSession() as session:
             try:
                 async with session.get(
-                    "http://localhost:9090/api/context",
+                    "http://localhost:9099/api/context",
                     timeout=aiohttp.ClientTimeout(total=2)
                 ) as response:
                     if response.status == 200:
@@ -532,67 +772,362 @@ async def get_context():
 async def websocket_context(websocket: WebSocket):
     """
     WebSocket endpoint for real-time context updates.
-    Streams context changes as they happen (every 100ms from Whisper server).
+
+    Polls the Whisper backend HTTP context endpoint (~10Hz) and streams
+    updates to the UI. This matches the existing UI schema and avoids CORS
+    mismatches seen when proxying raw upstream sockets.
     """
+
     await websocket.accept()
-    
-    last_context = None
-    connection_active = True
-    
-    try:
-        while connection_active:
+
+    upstream_url = os.getenv("CONTEXT_WS_UPSTREAM", "ws://localhost:9091")
+
+    async def transform_and_send(raw: Dict[str, Any]):
+        """Transform upstream data to UI schema and send."""
+        # Extract parts from upstream
+        context = raw.get("data", {}).get("context", {})
+        meta = raw.get("data", {}).get("meta", {})
+        
+        # Extract window info
+        window = context.get("window", {})
+        window_meta = window.get("metadata", {})
+        
+        # Map to UI payload
+        ui_payload = {
+            "workspace": {
+                "application": window.get("application", "") or window_meta.get("class", "") or "None",
+                "category": window_meta.get("category", "other"), # backend might not provide category yet
+                "window_title": window.get("title", ""),
+                "active_file": None, # TODO: Extract from title if possible
+                "states": {},
+                "workspace_name": window_meta.get("workspace", ""),
+                "monitor": None,
+                "pid": window_meta.get("pid"),
+            },
+            "recent_activity": {
+                "commands": context.get("shell", {}).get("recent_commands", []),
+                "clipboard": context.get("clipboard", {}).get("recent_entries", []),
+                "keywords": raw.get("data", {}).get("vocabulary", [])
+            },
+            "project_context": {
+                "git_branch": None,
+                "git_status": None,
+                "project_root": None
+            },
+            "hooks": {
+                "triggered": [],
+                "context_additions": {}
+            },
+            "meta": meta,
+        }
+        
+        await websocket.send_json({
+            "type": "context_update",
+            "data": ui_payload
+        })
+    async def relay():
+        retry_delay = 1
+        while True:
             try:
-                # Get context from hybrid server
                 async with aiohttp.ClientSession() as session:
-                    try:
-                        async with session.get(
-                            "http://localhost:9090/api/context",
-                            timeout=aiohttp.ClientTimeout(total=2)
-                        ) as response:
-                            if response.status == 200:
-                                data = await response.json()
-                                
-                                # Only send if context changed
-                                if data != last_context:
-                                    try:
-                                        await websocket.send_json(data)
-                                        last_context = data
-                                    except RuntimeError as e:
-                                        # WebSocket already closed
-                                        connection_active = False
-                                        break
-                    except asyncio.TimeoutError:
-                        # Silently skip on timeout, don't spam errors
-                        pass
-                    except Exception:
-                        # Skip other aiohttp errors
-                        pass
-                
-                # Wait 100ms before next check (matching server update rate)
-                await asyncio.sleep(0.1)
-                
-            except WebSocketDisconnect:
-                connection_active = False
-                break
-            except RuntimeError:
-                # WebSocket closed
-                connection_active = False
+                    async with session.ws_connect(upstream_url, heartbeat=15) as upstream:
+                        retry_delay = 1
+                        async for msg in upstream:
+                            if msg.type == aiohttp.WSMsgType.TEXT:
+                                try:
+                                    raw = json.loads(msg.data)
+                                    await transform_and_send(raw if isinstance(raw, dict) else {})
+                                except Exception:
+                                    pass
+                            elif msg.type == aiohttp.WSMsgType.ERROR:
+                                break
+            except asyncio.CancelledError:
                 break
             except Exception as e:
-                # Only log unexpected errors
-                if "close message" not in str(e).lower():
-                    print(f"Unexpected WebSocket error: {e}")
-                connection_active = False
-                break
-                
+            except Exception as e:
+                logger.warning(f"Upstream context WS reconnect in {retry_delay}s: {e}")
+                await asyncio.sleep(min(retry_delay, 5))
+                retry_delay = min(retry_delay * 2, 10)
+
+    relay_task = asyncio.create_task(relay())
+
+    try:
+        await relay_task
     except WebSocketDisconnect:
-        pass  # Client disconnected gracefully
+        relay_task.cancel()
+    except Exception as e:
     except Exception as e:
         if "close message" not in str(e).lower():
-            print(f"WebSocket connection error: {e}")
+            logger.error(f"WebSocket connection error: {e}")
+
+
+# ============================================================================
+# ORCHESTRATOR ENDPOINTS
+# ============================================================================
+
+class OrchestratorQuery(BaseModel):
+    query: str
+    session_id: Optional[str] = None
+
+
+class SpawnAgentRequest(BaseModel):
+    agent_type: str
+    task: str
+    parent_session: Optional[str] = None
+
+
+@app.get("/api/orchestrator/status")
+async def get_orchestrator_status():
+    """Get Agent Orchestrator status"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get("http://localhost:9093/health", timeout=2) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    return {"status": "online", **data}
+    except Exception as e:
+        return {"status": "offline", "error": str(e)}
+
+
+@app.get("/api/orchestrator/agents")
+async def list_orchestrator_agents():
+    """List all active agents in the orchestrator"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get("http://localhost:9093/agents", timeout=5) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                return {"agents": [], "error": "Failed to fetch agents"}
+    except Exception as e:
+        return {"agents": [], "error": str(e)}
+
+
+@app.get("/api/orchestrator/agent-types")
+async def get_agent_types():
+    """Get available agent types"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get("http://localhost:9093/agent-types", timeout=5) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+    except:
+        pass
+    
+    # Return default agent types if orchestrator not available
+    return {
+        "types": [
+            {
+                "name": "code-worker",
+                "description": "Code analysis, generation, and refactoring tasks",
+                "tools": ["Read", "Write", "Edit", "Grep", "Glob"],
+                "model": "sonnet"
+            },
+            {
+                "name": "research-worker", 
+                "description": "Research, information gathering, and documentation tasks",
+                "tools": ["Read", "Grep", "Glob"],
+                "model": "haiku"
+            },
+            {
+                "name": "shell-worker",
+                "description": "System operations and bash commands",
+                "tools": ["Bash", "Read", "Grep"],
+                "model": "sonnet"
+            },
+            {
+                "name": "voice-worker",
+                "description": "Text-to-speech and speech-to-text operations",
+                "tools": ["Read"],
+                "model": "haiku"
+            }
+        ]
+    }
+
+
+@app.post("/api/orchestrator/query")
+async def orchestrator_query(request: OrchestratorQuery):
+    """Send a query to the orchestrator"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "http://localhost:9093/query",
+                json={"query": request.query, "session_id": request.session_id},
+                timeout=60
+            ) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                return {"error": f"Orchestrator returned status {resp.status}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ============================================================================
+# VOICE / TTS PROXY ENDPOINTS
+# ============================================================================
+
+
+@app.get("/api/voice/conversations")
+async def get_voice_conversations():
+    """List conversations from the voice orchestrator."""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{ORCHESTRATOR_URL}/voice/conversations", timeout=10) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                return {"conversations": [], "error": f"voice orchestrator returned {resp.status}"}
+    except Exception as e:
+        return {"conversations": [], "error": str(e)}
+
+
+@app.post("/api/voice/conversations")
+async def create_voice_conversation():
+    """Create a new conversation via the voice orchestrator."""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(f"{ORCHESTRATOR_URL}/voice/conversations", timeout=10) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                return {"error": f"failed to create conversation: {resp.status}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/voice/conversations/{conversation_id}")
+async def get_voice_conversation(conversation_id: str):
+    """Get a specific conversation."""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{ORCHESTRATOR_URL}/voice/conversations/{conversation_id}", timeout=10) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                return {"error": f"conversation fetch failed: {resp.status}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.post("/api/voice/process")
+async def process_voice(request: Dict[str, Any]):
+    """Process text through the voice orchestrator (chat + TTS)."""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{ORCHESTRATOR_URL}/voice/process",
+                json=request,
+                timeout=60
+            ) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                return {"error": f"voice process failed: {resp.status}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.post("/api/voice/speak")
+async def speak_voice(request: Dict[str, Any]):
+    """Speak text via the voice orchestrator."""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{ORCHESTRATOR_URL}/voice/speak",
+                json=request,
+                timeout=30
+            ) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                return {"error": f"voice speak failed: {resp.status}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.post("/api/orchestrator/spawn")
+async def spawn_agent(request: SpawnAgentRequest):
+    """Spawn a new agent"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "http://localhost:9093/spawn",
+                json={
+                    "agent_type": request.agent_type,
+                    "task": request.task,
+                    "parent_session": request.parent_session
+                },
+                timeout=10
+            ) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                return {"error": f"Failed to spawn agent: {resp.status}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.delete("/api/orchestrator/agents/{session_id}")
+async def destroy_agent(session_id: str):
+    """Destroy an agent session"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.delete(
+                f"http://localhost:9093/agents/{session_id}",
+                timeout=10
+            ) as resp:
+                if resp.status == 200:
+                    return {"status": "destroyed", "session_id": session_id}
+                return {"error": f"Failed to destroy agent: {resp.status}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.websocket("/ws/orchestrator")
+async def websocket_orchestrator(websocket: WebSocket):
+    """WebSocket endpoint for real-time orchestrator events"""
+    await websocket.accept()
+    
+    orchestrator_url = os.getenv("ORCHESTRATOR_WS_URL", "ws://localhost:9093")
+    
+    async def relay():
+        retry_delay = 1
+        while True:
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.ws_connect(orchestrator_url, heartbeat=15) as upstream:
+                        retry_delay = 1
+                        
+                        # Subscribe to all events
+                        await upstream.send_json({"type": "subscribe", "topic": "all"})
+                        
+                        async for msg in upstream:
+                            if msg.type == aiohttp.WSMsgType.TEXT:
+                                try:
+                                    data = json.loads(msg.data)
+                                    await websocket.send_json(data)
+                                except Exception:
+                                    pass
+                            elif msg.type == aiohttp.WSMsgType.ERROR:
+                                break
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"Orchestrator WS reconnect in {retry_delay}s: {e}")
+                await asyncio.sleep(min(retry_delay, 5))
+                retry_delay = min(retry_delay * 2, 10)
+    
+    relay_task = asyncio.create_task(relay())
+    
+    try:
+        # Also handle incoming messages from the web client
+        while True:
+            data = await websocket.receive_json()
+            # Forward queries to orchestrator
+            if data.get("type") == "query":
+                # Process via HTTP for now
+                pass
+    except WebSocketDisconnect:
+        relay_task.cancel()
+    except Exception as e:
+        if "close message" not in str(e).lower():
+            print(f"Orchestrator WebSocket error: {e}")
+        relay_task.cancel()
 
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8934, log_level="info")
-

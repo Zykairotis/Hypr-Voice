@@ -76,8 +76,8 @@ integration:
     auto_optimize: true
     response_format: "voice_friendly"
 
-  # Claude Code SDK Integration
-  claude_code_sdk:
+  # Claude Agent SDK Integration
+  claude_agent_sdk:
     enabled: true
     tool_bridging: true
     context_sharing: true

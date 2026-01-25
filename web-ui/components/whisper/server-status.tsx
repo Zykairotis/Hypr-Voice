@@ -6,7 +6,7 @@ import { Activity } from "lucide-react";
 
 // Configurable server endpoints
 const WHISPER_HOST = "localhost";
-const WHISPER_PORT = 9090;
+const WHISPER_PORT = 9099;
 const WHISPER_WEBSOCKET_URL = `ws://${WHISPER_HOST}:${WHISPER_PORT}`;
 const WHISPER_REST_API_URL = `http://${WHISPER_HOST}:${WHISPER_PORT}`;
 

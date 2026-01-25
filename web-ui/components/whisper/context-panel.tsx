@@ -4,12 +4,12 @@ import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { 
-  Monitor, 
-  Terminal, 
-  Clipboard, 
-  Code, 
-  GitBranch, 
+import {
+  Monitor,
+  Terminal,
+  Clipboard,
+  Code,
+  GitBranch,
   Folder,
   Zap,
   Eye,
@@ -56,6 +56,10 @@ interface ContextData {
     triggered: string[];
     context_additions: Record<string, any>;
   };
+  meta?: {
+    backend?: string;
+    vocabulary?: string;
+  };
 }
 
 export default function ContextPanel() {
@@ -88,7 +92,7 @@ export default function ContextPanel() {
         ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
-            
+
             // Check for error messages
             if (data.error) {
               setBackendAvailable(false);
@@ -111,7 +115,12 @@ export default function ContextPanel() {
         };
 
         ws.onerror = (error) => {
-          console.error("WebSocket error:", error);
+          // Suppress generic empty errors often seen during connection drops/reconnects
+          if (Object.keys(error).length > 0) {
+            console.error("WebSocket error:", error);
+          } else {
+            console.warn("WebSocket connection issue (retrying...)");
+          }
           setWsConnected(false);
         };
 
@@ -119,16 +128,16 @@ export default function ContextPanel() {
           console.log("WebSocket disconnected");
           setWsConnected(false);
           setBackendAvailable(false);
-          
+
           // Attempt reconnection with exponential backoff
           if (reconnectAttempts < maxReconnectAttempts) {
             const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000);
             reconnectAttempts++;
-            
+
             if (reconnectAttempts === 1 || reconnectAttempts % 5 === 0) {
               console.log(`Reconnecting in ${delay}ms (attempt ${reconnectAttempts}/${maxReconnectAttempts})...`);
             }
-            
+
             reconnectTimeout = setTimeout(connect, delay);
           } else {
             console.error("Max reconnection attempts reached. Please restart the backend.");
@@ -218,6 +227,18 @@ export default function ContextPanel() {
         </Badge>
       </div>
 
+      {/* Meta badges if available */}
+      {context.meta && (
+        <div className="flex flex-wrap gap-2 text-xs">
+          {context.meta.backend && (
+            <Badge variant="secondary" className="font-mono">Backend: {context.meta.backend}</Badge>
+          )}
+          {context.meta.vocabulary && (
+            <Badge variant="secondary" className="font-mono">Vocab: {context.meta.vocabulary}</Badge>
+          )}
+        </div>
+      )}
+
       <Tabs defaultValue="workspace" className="w-full">
         <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="workspace">
@@ -245,15 +266,15 @@ export default function ContextPanel() {
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">Application</span>
-                <Badge className="font-mono">{context.workspace.application || "None"}</Badge>
-              </div>
-              
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Category</span>
-                <CategoryBadge category={context.workspace.category} />
+                <Badge className="font-mono">{context.workspace?.application || "None"}</Badge>
               </div>
 
-              {context.workspace.window_title && (
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Category</span>
+                <CategoryBadge category={context.workspace?.category || "other"} />
+              </div>
+
+              {context.workspace?.window_title && (
                 <div className="space-y-1">
                   <span className="text-sm text-muted-foreground">Window Title</span>
                   <div className="text-xs font-mono bg-muted/30 rounded p-2 truncate">
@@ -262,7 +283,7 @@ export default function ContextPanel() {
                 </div>
               )}
 
-              {context.workspace.active_file && (
+              {context.workspace?.active_file && (
                 <div className="space-y-1">
                   <span className="text-sm text-muted-foreground flex items-center gap-1">
                     <Code className="w-3 h-3" />
@@ -273,80 +294,90 @@ export default function ContextPanel() {
                   </div>
                 </div>
               )}
+
+              {!context.workspace && (
+                <div className="text-xs text-muted-foreground text-center py-2 italic">
+                  No workspace data available
+                </div>
+              )}
             </div>
           </Card>
 
           {/* Window Details */}
-          <Card className="p-4 glass border-border/50">
-            <div className="flex items-center gap-2 mb-3">
-              <Monitor className="w-4 h-4 text-primary" />
-              <h4 className="text-sm font-semibold">Window Details</h4>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <span className="text-xs text-muted-foreground">Workspace</span>
-                <Badge variant="outline" className="font-mono text-xs">
-                  {context.workspace.workspace_name || "N/A"}
-                </Badge>
+          {context.workspace && (
+            <Card className="p-4 glass border-border/50">
+              <div className="flex items-center gap-2 mb-3">
+                <Monitor className="w-4 h-4 text-primary" />
+                <h4 className="text-sm font-semibold">Window Details</h4>
               </div>
-              
-              <div className="space-y-1">
-                <span className="text-xs text-muted-foreground">Monitor</span>
-                <Badge variant="outline" className="font-mono text-xs">
-                  {context.workspace.monitor !== null ? `Monitor ${context.workspace.monitor}` : "N/A"}
-                </Badge>
-              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <span className="text-xs text-muted-foreground">Workspace</span>
+                  <Badge variant="outline" className="font-mono text-xs">
+                    {context.workspace.workspace_name || "N/A"}
+                  </Badge>
+                </div>
 
-              <div className="space-y-1">
-                <span className="text-xs text-muted-foreground">Process ID</span>
-                <Badge variant="outline" className="font-mono text-xs">
-                  {context.workspace.pid || "N/A"}
-                </Badge>
-              </div>
+                <div className="space-y-1">
+                  <span className="text-xs text-muted-foreground">Monitor</span>
+                  <Badge variant="outline" className="font-mono text-xs">
+                    {context.workspace.monitor !== null ? `Monitor ${context.workspace.monitor}` : "N/A"}
+                  </Badge>
+                </div>
 
-              <div className="space-y-1">
-                <span className="text-xs text-muted-foreground">Backend</span>
-                <Badge variant="outline" className="font-mono text-xs">
-                  {context.workspace.states.xwayland ? "XWayland" : "Wayland"}
-                </Badge>
+                <div className="space-y-1">
+                  <span className="text-xs text-muted-foreground">Process ID</span>
+                  <Badge variant="outline" className="font-mono text-xs">
+                    {context.workspace.pid || "N/A"}
+                  </Badge>
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-xs text-muted-foreground">Backend</span>
+                  <Badge variant="outline" className="font-mono text-xs">
+                    {context.workspace.states?.xwayland ? "XWayland" : "Wayland"}
+                  </Badge>
+                </div>
               </div>
-            </div>
-          </Card>
+            </Card>
+          )}
 
           {/* Window State */}
-          <Card className="p-4 glass border-border/50">
-            <div className="flex items-center gap-2 mb-3">
-              <Zap className="w-4 h-4 text-primary" />
-              <h4 className="text-sm font-semibold">Window State</h4>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {context.workspace.states.fullscreen && (
-                <Badge className="bg-green-500/20 text-green-400 border-0">
-                  ⛶ Fullscreen
-                </Badge>
-              )}
-              {context.workspace.states.floating && (
-                <Badge className="bg-blue-500/20 text-blue-400 border-0">
-                  ⬚ Floating
-                </Badge>
-              )}
-              {context.workspace.states.pinned && (
-                <Badge className="bg-amber-500/20 text-amber-400 border-0">
-                  📌 Pinned
-                </Badge>
-              )}
-              {!context.workspace.states.fullscreen && 
-               !context.workspace.states.floating && 
-               !context.workspace.states.pinned && (
-                <Badge className="bg-gray-500/20 text-gray-400 border-0">
-                  ▭ Tiled
-                </Badge>
-              )}
-            </div>
-          </Card>
+          {context.workspace?.states && (
+            <Card className="p-4 glass border-border/50">
+              <div className="flex items-center gap-2 mb-3">
+                <Zap className="w-4 h-4 text-primary" />
+                <h4 className="text-sm font-semibold">Window State</h4>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {context.workspace.states.fullscreen && (
+                  <Badge className="bg-green-500/20 text-green-400 border-0">
+                    ⛶ Fullscreen
+                  </Badge>
+                )}
+                {context.workspace.states.floating && (
+                  <Badge className="bg-blue-500/20 text-blue-400 border-0">
+                    ⬚ Floating
+                  </Badge>
+                )}
+                {context.workspace.states.pinned && (
+                  <Badge className="bg-amber-500/20 text-amber-400 border-0">
+                    📌 Pinned
+                  </Badge>
+                )}
+                {!context.workspace.states.fullscreen &&
+                  !context.workspace.states.floating &&
+                  !context.workspace.states.pinned && (
+                    <Badge className="bg-gray-500/20 text-gray-400 border-0">
+                      ▭ Tiled
+                    </Badge>
+                  )}
+              </div>
+            </Card>
+          )}
 
           {/* Geometry */}
-          {context.workspace.geometry.width && context.workspace.geometry.height && (
+          {context.workspace?.geometry?.width && context.workspace?.geometry?.height && (
             <Card className="p-4 glass border-border/50">
               <div className="flex items-center gap-2 mb-3">
                 <Monitor className="w-4 h-4 text-primary" />
@@ -378,11 +409,11 @@ export default function ContextPanel() {
               <Terminal className="w-4 h-4 text-primary" />
               <h4 className="text-sm font-semibold">Recent Commands</h4>
               <Badge variant="secondary" className="ml-auto text-xs">
-                {context.recent_activity.commands.length}
+                {context.recent_activity?.commands?.length || 0}
               </Badge>
             </div>
             <div className="space-y-1 max-h-40 overflow-y-auto">
-              {context.recent_activity.commands.slice(0, 10).map((cmd, i) => (
+              {context.recent_activity?.commands?.slice(0, 10).map((cmd, i) => (
                 <motion.div
                   key={i}
                   initial={{ opacity: 0, x: -10 }}
@@ -402,11 +433,11 @@ export default function ContextPanel() {
               <Clipboard className="w-4 h-4 text-primary" />
               <h4 className="text-sm font-semibold">Clipboard History</h4>
               <Badge variant="secondary" className="ml-auto text-xs">
-                {context.recent_activity.clipboard.length}
+                {context.recent_activity?.clipboard?.length || 0}
               </Badge>
             </div>
             <div className="space-y-1 max-h-32 overflow-y-auto">
-              {context.recent_activity.clipboard.slice(0, 5).map((item, i) => (
+              {context.recent_activity?.clipboard?.slice(0, 5).map((item, i) => (
                 <motion.div
                   key={i}
                   initial={{ opacity: 0, x: -10 }}
@@ -426,11 +457,11 @@ export default function ContextPanel() {
               <Hash className="w-4 h-4 text-primary" />
               <h4 className="text-sm font-semibold">Extracted Vocabulary</h4>
               <Badge variant="secondary" className="ml-auto text-xs">
-                {context.recent_activity.keywords.length}
+                {context.recent_activity?.keywords?.length || 0}
               </Badge>
             </div>
             <div className="flex flex-wrap gap-1.5">
-              {context.recent_activity.keywords.map((keyword, i) => (
+              {context.recent_activity?.keywords?.map((keyword, i) => (
                 <motion.div
                   key={i}
                   initial={{ opacity: 0, scale: 0.8 }}
@@ -450,7 +481,7 @@ export default function ContextPanel() {
         <TabsContent value="project" className="space-y-3">
           <Card className="p-4 glass border-border/50">
             <div className="space-y-3">
-              {context.project_context.project_root && (
+              {context.project_context?.project_root && (
                 <div className="space-y-1">
                   <span className="text-sm text-muted-foreground flex items-center gap-1">
                     <Folder className="w-3 h-3" />
@@ -462,10 +493,10 @@ export default function ContextPanel() {
                 </div>
               )}
 
-              {context.project_context.git_branch && (
+              {context.project_context?.git_branch && (
                 <div className="space-y-1">
                   <span className="text-sm text-muted-foreground flex items-center gap-1">
-                    <GitBranch className="w-3 h-3" />
+                    <Code className="w-3 h-3" />
                     Git Branch
                   </span>
                   <Badge className="font-mono bg-primary/20">
@@ -474,7 +505,7 @@ export default function ContextPanel() {
                 </div>
               )}
 
-              {context.project_context.git_status && (
+              {context.project_context?.git_status && (
                 <div className="space-y-1">
                   <span className="text-sm text-muted-foreground">Git Status</span>
                   <pre className="text-xs font-mono bg-muted/30 rounded p-2 overflow-x-auto">
@@ -483,7 +514,7 @@ export default function ContextPanel() {
                 </div>
               )}
 
-              {!context.project_context.project_root && (
+              {!context.project_context?.project_root && (
                 <p className="text-xs text-muted-foreground text-center py-4">
                   No project context available
                 </p>
@@ -500,11 +531,11 @@ export default function ContextPanel() {
                 <Zap className="w-4 h-4 text-amber-500" />
                 <h4 className="text-sm font-semibold">Triggered Hooks</h4>
                 <Badge variant="secondary" className="ml-auto text-xs">
-                  {context.hooks.triggered.length}
+                  {context.hooks?.triggered?.length || 0}
                 </Badge>
               </div>
 
-              {context.hooks.triggered.length > 0 ? (
+              {context.hooks?.triggered?.length > 0 ? (
                 <div className="space-y-1.5">
                   {context.hooks.triggered.map((hook, i) => (
                     <motion.div
@@ -525,7 +556,7 @@ export default function ContextPanel() {
                 </p>
               )}
 
-              {Object.keys(context.hooks.context_additions).length > 0 && (
+              {context.hooks?.context_additions && Object.keys(context.hooks.context_additions).length > 0 && (
                 <div className="mt-4 space-y-2">
                   <span className="text-xs text-muted-foreground">Context Additions</span>
                   <pre className="text-xs font-mono bg-muted/30 rounded p-2 overflow-x-auto max-h-40">
@@ -560,4 +591,3 @@ function CategoryBadge({ category }: { category: string }) {
     </Badge>
   );
 }
-

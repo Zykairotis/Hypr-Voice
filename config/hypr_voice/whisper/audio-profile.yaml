@@ -1,0 +1,20 @@
+alsa:
+  suppress_warnings: true
+  use_pulseaudio_only: true
+audio:
+  channels: 1
+  chunk_size: 2048
+  format: int16
+  sample_rate: 16000
+pulseaudio:
+  default_source: alsa_output.pci-0000_2d_00.1.hdmi-stereo.monitor
+  device_name: HDMI Monitor (from iPhone)
+  device_type: monitor
+recording:
+  auto_cleanup:
+    days_to_keep: 7
+    enabled: false
+  channels: 1
+  format: wav
+  sample_rate: 16000
+  save_recordings: true

@@ -1,0 +1,27 @@
+[Unit]
+Description=Hypr-Voice Push-to-Talk Daemon
+Documentation=https://github.com/yourusername/hypr-voice
+After=graphical-session.target
+
+[Service]
+Type=simple
+Restart=on-failure
+RestartSec=5
+
+# Environment
+Environment="DISPLAY=:0"
+Environment="WAYLAND_DISPLAY=wayland-0"
+
+# Working directory
+WorkingDirectory=/home/mewtwo/Zykairotis/Hypr-Voice
+
+# Start command
+ExecStart=/home/mewtwo/Zykairotis/Hypr-Voice/scripts/hypr-voice-daemon.sh start
+ExecStop=/home/mewtwo/Zykairotis/Hypr-Voice/scripts/hypr-voice-daemon.sh stop
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

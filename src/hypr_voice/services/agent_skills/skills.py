@@ -8,6 +8,10 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 from datetime import datetime
+import os
+
+from hypr_voice.integrations.e2b_client import get_client, E2BUnavailable
+from hypr_voice.services.observability import emitter
 
 logger = logging.getLogger(__name__)
 
@@ -25,11 +29,8 @@ class Skill:
     
     def to_tool(self):
         """Convert to Claude SDK tool format"""
-        try:
-            from claude_agent_sdk import tool
-        except ImportError:
-            from claude_agent_sdk_mock import tool
-            
+        from hypr_voice.services.sdk_compat import tool
+
         @tool(name=self.name, description=self.description)
         async def skill_tool(**kwargs):
             return await self.execute(kwargs.get('agent_context', {}), **kwargs)
@@ -89,16 +90,43 @@ class BashExecutionSkill(Skill):
     
     async def execute(self, agent_context: Dict, command: str, **kwargs) -> Any:
         working_dir = agent_context.get("working_directory", "/tmp")
-        
+        use_sandbox = os.getenv("HYPR_VOICE_E2B_ENABLED", "0") == "1"
+
+        if use_sandbox:
+            try:
+                client = get_client()
+                result = await client.exec(command, workdir=working_dir)
+                await emitter.emit(
+                    "SANDBOX_EXEC",
+                    {
+                        "sandbox_id": client.sandbox_id,
+                        "command": command,
+                        "stdout": result.stdout[:4000],
+                        "stderr": result.stderr[:4000],
+                        "exit_code": result.exit_code,
+                    },
+                    severity="info",
+                    session_id=agent_context.get("conversation_id"),
+                )
+                return {
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                    "returncode": result.exit_code,
+                    "sandbox_id": client.sandbox_id,
+                }
+            except E2BUnavailable as e:
+                logger.warning(f"E2B unavailable, falling back to local exec: {e}")
+            except Exception as e:
+                logger.error(f"Sandbox exec failed, falling back to local: {e}")
+
         process = await asyncio.create_subprocess_shell(
             command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=working_dir
         )
-        
         stdout, stderr = await process.communicate()
-        
+
         return {
             "stdout": stdout.decode(),
             "stderr": stderr.decode(),

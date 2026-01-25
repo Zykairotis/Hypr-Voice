@@ -269,10 +269,7 @@ class GeminiScreenService:
 
 
 # Integration with agent tools
-try:
-    from claude_agent_sdk import tool
-except ImportError:
-    from claude_agent_sdk_mock import tool
+from ..sdk_compat import tool
 
 @tool(
     name="analyze_screen",

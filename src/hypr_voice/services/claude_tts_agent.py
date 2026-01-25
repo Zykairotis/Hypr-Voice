@@ -10,18 +10,17 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, AsyncIterator
 
-try:
-    from claude_agent_sdk import (
-        ClaudeSDKClient,
-        ClaudeAgentOptions,
-        AssistantMessage,
-        TextBlock,
-        ResultMessage
-    )
-    CLAUDE_SDK_AVAILABLE = True
-except ImportError:
-    CLAUDE_SDK_AVAILABLE = False
-    logging.warning("Claude Agent SDK not available")
+from .sdk_compat import (
+    ClaudeSDKClient,
+    ClaudeAgentOptions,
+    AssistantMessage,
+    TextBlock,
+    ResultMessage,
+    CLAUDE_SDK_AVAILABLE
+)
+
+if not CLAUDE_SDK_AVAILABLE:
+    logging.warning("Claude Agent SDK not available - using fallback mode")
 
 # Try to import local Claude Code integration
 try:
@@ -165,7 +164,7 @@ class ClaudeTTSAgent:
         tts_voice: Optional[str] = None,
         working_directory: Optional[str] = None,
         system_prompt: Optional[str] = None,
-        use_local_claude: bool = True
+        use_local_claude: bool = False
     ):
         """
         Initialize Claude TTS Agent
@@ -209,7 +208,7 @@ class ClaudeTTSAgent:
         # Setup Claude Agent options (for API-based mode)
         self.agent_options = None
         if not self.use_local_claude:
-            self.agent_options = self._setup_agent_options(system_prompt)
+            self.agent_options = self._setup_agent_options(self.working_directory, system_prompt)
         
         logger.info(f"Claude TTS Agent initialized - Local: {self.use_local_claude}, TTS: {self.enable_tts}")
     
@@ -254,8 +253,10 @@ You have access to file system tools, web search, and TTS synthesis capabilities
         options = ClaudeAgentOptions(
             system_prompt=default_prompt,
             max_turns=5,
-            permission_mode="acceptEdits",  # Auto-accept file edits
-            cwd=working_directory or str(Path.cwd())
+            permission_mode="default",
+            cwd=working_directory or str(Path.cwd()),
+            setting_sources=["project"],
+            allowed_tools=["Read", "Write", "Edit", "Grep", "Glob", "Bash", "Skill", "SlashCommand"],
         )
         
         return options

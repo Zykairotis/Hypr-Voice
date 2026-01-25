@@ -1,40 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { get_vocabulary_manager } from '@/src/Hypr-Whisper/vocabulary_manager';
+
+const BRIDGE_URL = process.env.HYPR_VOICE_BRIDGE_URL || 'http://localhost:8934';
 
 export async function GET(request: NextRequest) {
   try {
-    const vocabularyManager = get_vocabulary_manager();
+    const { searchParams } = new URL(request.url);
+    const appName = searchParams.get('name');
 
-    // Detect current application
-    const appName = vocabularyManager.detect_active_application();
-
-    // Get matched vocabulary
-    let matchedVocabulary: string | undefined;
-    if (appName) {
-      matchedVocabulary = vocabularyManager.match_vocabulary_to_application(appName);
+    if (!appName) {
+      return NextResponse.json(
+        { error: 'Missing application name parameter' },
+        { status: 400 }
+      );
     }
 
-    // Get context from window (placeholder - would need Hyprland integration)
-    const windowInfo = {
-      class: appName || 'unknown',
-      title: 'Current Window',
-    };
-
-    // Extract keywords from window info
-    const contextManager = vocabularyManager.context_manager;
-    let keywords: string[] = [];
-
-    if (contextManager) {
-      const context = contextManager.extract_context_from_hyprland(windowInfo);
-      keywords = Array.from(context.keywords);
-    }
-
-    return NextResponse.json({
-      class: appName || 'unknown',
-      title: windowInfo.title,
-      keywords,
-      matchedVocabulary,
+    const response = await fetch(`${BRIDGE_URL}/api/vocabulary/application/${appName}`, {
+      cache: 'no-store',
     });
+    const data = await response.json();
+    return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error('Error detecting application:', error);
     return NextResponse.json(
