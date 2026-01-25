@@ -139,15 +139,29 @@ src/api/logs/**/*.json
 hive-mind-prompt-*.txt
 old_files/
 
+# Runtime data directories (untracked from Git)
+runtime/
+logs/
+audio_output/
+var/*.pid
+var/*.log
+
+# Databases (already excluded above)
+.swarm/
+.hive-mind/
+
+# External references
+Ref-github-outsource/
+
+# Agent coordination (may be used by external tools)
+memory/
+coordination/
+
 # Claude Flow generated files
 .claude/settings.local.json
 .mcp.json
 claude-flow.config.json
-.swarm/
-.hive-mind/
 .claude-flow/
-memory/
-coordination/
 memory/claude-flow-data.json
 memory/sessions/*
 !memory/sessions/README.md
@@ -156,12 +170,7 @@ memory/agents/*
 coordination/memory_bank/*
 coordination/subtasks/*
 coordination/orchestration/*
-*.db
-*.db-journal
-*.db-wal
-*.sqlite
-*.sqlite-journal
-*.sqlite-wal
 claude-flow
+
 # Removed Windows wrapper files per user request
 hive-mind-prompt-*.txt
