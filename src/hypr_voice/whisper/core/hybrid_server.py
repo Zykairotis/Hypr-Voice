@@ -178,8 +178,15 @@ logger.addHandler(console_handler)
 # ============================================================================
 # TRACE LOGGING (OPTIONAL, FOR PERFORMANCE MONITORING)
 # ============================================================================
+# Trace configuration
 TRACE_ENABLED = os.getenv("HYPR_VOICE_TRACE", "0") == "1"
 TRACE_SLOW_MS = float(os.getenv("HYPR_VOICE_TRACE_SLOW_MS", "0"))
+
+# Flow mode specific trace controls
+HYPR_VOICE_FLOW_TRACE = os.getenv("HYPR_VOICE_FLOW_TRACE", "0") == "1"
+HYPR_VOICE_TRACE_CONTEXT = os.getenv("HYPR_VOICE_TRACE_CONTEXT", "1") == "1"
+HYPR_VOICE_TRACE_TCPGEN = os.getenv("HYPR_VOICE_TRACE_TCPGEN", "1") == "1"
+HYPR_VOICE_TRACE_QUEUE = os.getenv("HYPR_VOICE_TRACE_QUEUE", "1") == "1"
 
 
 def _trace_duration(label: str, start_time: float, **fields) -> float:
@@ -226,6 +233,16 @@ try:
 except ImportError as e:
     logger.warning(f"Application detector not found: {e}, context-aware vocabulary disabled")
     APP_DETECTOR_ENABLED = False
+
+# Import window backend cache stats for monitoring
+_window_backend_cache_stats_enabled = False
+try:
+    from ..backends.window_backends import get_cache_stats, reset_cache_stats
+    _window_backend_cache_stats_enabled = True
+    logger.debug("Window backend cache stats available for monitoring")
+except ImportError:
+    get_cache_stats = None
+    reset_cache_stats = None
 
 # ============================================================================
 # PYDANTIC MODELS
@@ -910,7 +927,25 @@ async def _flow_transcribe_file_direct(
         
         # Calculate total time
         timings['total_ms'] = (time.perf_counter() - total_start) * 1000
-        
+
+        # Get window backend cache stats if available
+        cache_stats_str = ""
+        if _window_backend_cache_stats_enabled and get_cache_stats:
+            try:
+                cache_stats = get_cache_stats()
+                if cache_stats.get('reads', 0) > 0:
+                    hit_rate = cache_stats.get('hits', 0) / cache_stats['reads'] * 100
+                    cache_stats_str = (
+                        f"   ───────────────────────────────────────────\n"
+                        f"   💾 CACHE STATS:         hits={cache_stats.get('hits', 0)} "
+                        f"misses={cache_stats.get('misses', 0)} "
+                        f"hit_rate={hit_rate:.0f}%\n"
+                        f"      ├─ Avg read:        {cache_stats.get('avg_read_ms', 0):.1f}ms\n"
+                        f"      └─ Avg write:       {cache_stats.get('avg_write_ms', 0):.1f}ms\n"
+                    )
+            except Exception as e:
+                logger.debug(f"Failed to get cache stats: {e}")
+
         # Log comprehensive timing summary
         meta = result.get("metadata", {})
         logger.info(
@@ -929,6 +964,7 @@ async def _flow_transcribe_file_direct(
             f"      └─ Chunks:           {meta.get('chunk_count', 1)}\n"
             f"   ───────────────────────────────────────────\n"
             f"   📝 POST-PROCESS:        {timings['postprocess_ms']:7.1f}ms\n"
+            f"{cache_stats_str}"
             f"   ═══════════════════════════════════════════\n"
             f"   ⏱️ TOTAL PIPELINE:      {timings['total_ms']:7.1f}ms\n"
             f"   ═══════════════════════════════════════════\n"
@@ -962,11 +998,19 @@ def _encode_audio_to_opus(audio_data: np.ndarray, bitrate: str = "24k") -> Optio
         
         opus_path = wav_path.replace('.wav', '.opus')
         
-        # Convert to Opus
+        # Convert to Opus with optimized settings for speed
+        # -compression_level 0: fastest encoding (vs default 10)
+        # -vbr off: constant bitrate (faster than variable bitrate)
+        # -application voip: optimized for speech (lower complexity)
         ffmpeg_start = time.perf_counter()
         result = subprocess.run([
             'ffmpeg', '-y', '-i', wav_path,
-            '-c:a', 'libopus', '-b:a', bitrate, '-ar', '16000', '-ac', '1',
+            '-c:a', 'libopus',
+            '-b:a', bitrate,
+            '-compression_level', '0',  # Fastest encoding
+            '-vbr', 'off',  # Constant bitrate (faster)
+            '-application', 'voip',  # Optimized for speech
+            '-ar', '16000', '-ac', '1',
             opus_path
         ], capture_output=True, timeout=10)
         _trace_duration(
@@ -1824,9 +1868,16 @@ class TranscriptionSession:
                 if tcpgen_info['corrections']:
                     logger.info(
                         f"Session {self.session_id}: ✨ TCPGen corrected {tcpgen_info['correction_count']} words: "
-                        f"'{new_text[:80]}...' -> '{tcpgen_text[:80]}...'" if len(new_text) > 80 
+                        f"'{new_text[:80]}...' -> '{tcpgen_text[:80]}...'" if len(new_text) > 80
                         else f"Session {self.session_id}: ✨ TCPGen: '{new_text}' -> '{tcpgen_text}'"
                     )
+                    # Enhanced TCPGen timing breakdown when trace is enabled
+                    if HYPR_VOICE_TRACE_TCPGEN:
+                        logger.info(
+                            f"   📊 TCPGen breakdown: {tcpgen_info['total_ms']:.1f}ms "
+                            f"(preprocessing={tcpgen_info.get('preprocessing_ms', 0):.1f}ms, "
+                            f"matching={tcpgen_info.get('matching_ms', 0):.1f}ms)"
+                        )
                     # Log specific corrections
                     for corr in tcpgen_info['corrections'][:3]:  # Show first 3
                         logger.debug(f"   • '{corr['original']}' → '{corr['corrected']}'")
@@ -1864,12 +1915,41 @@ class TranscriptionSession:
                 logger.debug(f"Session {self.session_id}: No text from transcription")
             
             timings["total_ms"] = (time.perf_counter() - process_start) * 1000
+
+            # Add queue statistics to timing if tracing is enabled
+            queue_stats_str = ""
+            if HYPR_VOICE_TRACE_QUEUE and self.queue_stats["puts"] > 0:
+                blocked_times = self.queue_stats.get("blocked_time_ms", [])
+                avg_blocked = sum(blocked_times) / len(blocked_times) if blocked_times else 0
+                queue_stats_str = (
+                    f" queue_puts={self.queue_stats['puts']}"
+                    f" max_depth={self.queue_stats['max_depth']}"
+                    f" blocks={self.queue_stats['blocks']}"
+                    f" avg_blocked={avg_blocked:.1f}ms"
+                )
+
+            # Get window backend cache stats if available
+            cache_stats_str = ""
+            if _window_backend_cache_stats_enabled and get_cache_stats:
+                try:
+                    cache_stats = get_cache_stats()
+                    if cache_stats.get('reads', 0) > 0:
+                        hit_rate = cache_stats.get('hits', 0) / cache_stats['reads'] * 100
+                        cache_stats_str = (
+                            f" cache_hits={cache_stats.get('hits', 0)}"
+                            f" cache_misses={cache_stats.get('misses', 0)}"
+                            f" cache_hit_rate={hit_rate:.0f}%"
+                        )
+                except Exception as e:
+                    logger.debug(f"Failed to get cache stats: {e}")
+
             logger.info(
                 f"Session {self.session_id}: Local pipeline timing total={timings['total_ms']:.1f}ms "
                 f"transcribe={timings.get('transcribe_ms', 0):.1f}ms "
                 f"retry={timings.get('retry_ms', 0):.1f}ms "
                 f"post={timings.get('post_ms', 0):.1f}ms "
                 f"audio={len(audio_to_transcribe)/16000:.2f}s segments={len(segments)}"
+                f"{queue_stats_str}{cache_stats_str}"
             )
         except Exception as e:
             logger.error(f"Session {self.session_id}: Error processing audio: {e}")

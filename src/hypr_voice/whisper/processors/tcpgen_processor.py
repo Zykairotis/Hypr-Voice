@@ -173,7 +173,9 @@ class TCPGenProcessor:
             'corrections': corrections,
             'correction_count': len(corrections),
             'total_words': len(words),
-            'total_ms': total_ms
+            'total_ms': total_ms,
+            'preprocessing_ms': preprocessing_ms,
+            'matching_ms': matching_ms
         }
 
         return corrected_text, info

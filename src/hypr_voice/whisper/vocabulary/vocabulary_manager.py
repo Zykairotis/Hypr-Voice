@@ -91,6 +91,10 @@ class VocabularyManager:
         self.current_backend: Optional[str] = None
         self.active_keywords: Set[str] = set()
 
+        # Cache for prioritized keywords (invalidated on vocabulary change)
+        self._prioritized_cache: Optional[List[str]] = None
+        self._prioritized_cache_key: Optional[str] = None  # vocabulary_name + active_keywords hash
+
         # Check if enhanced system should be used
         use_enhanced = os.environ.get('HYPR_VOICE_ENHANCED_CONTEXT', '').lower() in ('true', '1', 'yes')
 
@@ -298,6 +302,9 @@ class VocabularyManager:
             self.current_vocabulary = vocab_name
             self.active_keywords = self._get_active_keywords(vocab_name)
             keywords_count = len(self.active_keywords)
+            # Invalidate prioritized keywords cache
+            self._prioritized_cache = None
+            self._prioritized_cache_key = None
             logger.info(f"Switched to vocabulary: {vocab_name} (app: {app_name}, backend: {self.current_backend})")
             emit('vocab_change', vocab_name=vocab_name, app_name=app_name, backend_name=self.current_backend)
 
@@ -516,17 +523,25 @@ class VocabularyManager:
         """
         Prioritize keywords by importance.
         Order: Application-specific > Context (shell/clipboard) > Global
-        
+
         Returns:
             List of prioritized unique keywords
         """
+        # Build cache key from current vocabulary and active keywords
+        cache_key = f"{self.current_vocabulary}:{len(self.active_keywords)}"
+
+        # Return cached result if available and valid
+        if self._prioritized_cache is not None and self._prioritized_cache_key == cache_key:
+            logger.debug(f"Using cached prioritized keywords ({len(self._prioritized_cache)} terms)")
+            return self._prioritized_cache
+
         prioritized = []
-        
+
         # 1. Application-specific vocabulary (highest priority)
         if self.current_vocabulary and self.current_vocabulary != 'global':
             app_keywords = self._get_app_specific_keywords()
             prioritized.extend(app_keywords[:20])  # Top 20 app terms
-        
+
         # 2. Context keywords (shell history, clipboard)
         if self.context_manager:
             try:
@@ -544,11 +559,11 @@ class VocabularyManager:
                     prioritized.extend(list(context_keywords)[:15])  # Top 15 context terms
             except Exception as e:
                 logger.debug(f"Error getting context keywords: {e}")
-        
+
         # 3. Global technical terms (lower priority)
         global_keywords = self._get_global_keywords()
         prioritized.extend(global_keywords[:15])  # Top 15 global terms
-        
+
         # Remove duplicates while preserving order
         seen = set()
         unique = []
@@ -556,7 +571,11 @@ class VocabularyManager:
             if kw not in seen:
                 seen.add(kw)
                 unique.append(kw)
-        
+
+        # Update cache
+        self._prioritized_cache = unique
+        self._prioritized_cache_key = cache_key
+
         return unique
     
     def _get_app_specific_keywords(self) -> List[str]:

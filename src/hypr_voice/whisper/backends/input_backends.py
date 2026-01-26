@@ -21,6 +21,8 @@ import time
 from typing import Optional, List
 
 logger = logging.getLogger(__name__)
+TRACE_ENABLED = os.getenv("HYPR_VOICE_TRACE", "0") == "1"
+TRACE_SLOW_MS = float(os.getenv("HYPR_VOICE_TRACE_SLOW_MS", "0"))
 
 
 # ---------- helpers ----------
@@ -31,13 +33,20 @@ def _cmd_exists(cmd: str) -> bool:
 
 
 def _run_safe(args: List[str], timeout: float = 1.5, stdin_input: Optional[bytes] = None) -> bool:
+    start_time = time.perf_counter()
     try:
         if stdin_input is not None:
             subprocess.run(args, input=stdin_input, capture_output=True, timeout=timeout, check=True)
         else:
             subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=True)
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+        if TRACE_ENABLED or (TRACE_SLOW_MS > 0 and elapsed_ms >= TRACE_SLOW_MS):
+            logger.info("[TRACE] input_cmd=%s rc=0 %.1fms", args, elapsed_ms)
         return True
     except Exception as e:
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+        if TRACE_ENABLED or (TRACE_SLOW_MS > 0 and elapsed_ms >= TRACE_SLOW_MS):
+            logger.info("[TRACE] input_cmd=%s rc=error %.1fms", args, elapsed_ms)
         logger.debug("input backend command failed: %s -> %s", args, e)
         return False
 
