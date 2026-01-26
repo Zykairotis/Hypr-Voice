@@ -108,9 +108,11 @@ stop_recording() {
     TRANSCRIPTION=$("$VENV_PATH/bin/python" -c "
 import sys
 import time
+import subprocess
 # Import from new module path
 from hypr_voice.whisper.client.hybrid_client import HybridWhisperClient
-import subprocess
+from hypr_voice.whisper.backends.input_backends import detect_input_backend
+from hypr_voice.whisper.backends.window_backends import detect_backend
 
 client = HybridWhisperClient('http://localhost:9099')
 
@@ -124,8 +126,11 @@ final_result = result if result else {'text': ''}
 if final_result and 'text' in final_result:
     text = final_result['text'].strip()
     if text:
-        # Type the text instantly using ydotool with 1ms delays (fastest)
-        subprocess.run(['ydotool', 'type', '-d', '1', '-H', '1', text], capture_output=True)
+        # Type using universal paste backend (clipboard + paste shortcuts)
+        # Works on terminals (Ctrl+Shift+V) and GUI apps (Ctrl+V)
+        window_backend = detect_backend()
+        backend = detect_input_backend(window_backend=window_backend.name)
+        backend.type_text_instant(text)
         print(f'{text}')
     else:
         print('__NO_SPEECH__')
