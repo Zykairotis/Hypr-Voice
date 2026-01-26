@@ -157,10 +157,12 @@ class PushToTalkRecorder:
         # ============================================================================
         # STREAMING CHUNKING STATE (for long recordings optimization)
         # ============================================================================
+        # Smart defaults - no env vars needed unless you want to customize
         self.streaming_mode = os.getenv("FLOW_STREAMING_MODE", "1") == "1"
-        self.chunk_size_seconds = float(os.getenv("FLOW_STREAMING_CHUNK_SIZE", "27.0"))
-        self.overlap_seconds = float(os.getenv("FLOW_STREAMING_OVERLAP", "3.0"))
-        self.min_duration_for_streaming = float(os.getenv("FLOW_STREAMING_MIN_DURATION", "20.0"))
+        # Use existing WISPR_FLOW_CHUNK_SECONDS if set, otherwise 27s default
+        self.chunk_size_seconds = float(os.getenv("WISPR_FLOW_CHUNK_SECONDS", "27"))
+        self.overlap_seconds = 3.0  # Fixed optimal value
+        self.min_duration_for_streaming = 20.0  # Fixed threshold
         
         # Streaming state
         self.chunk_buffer = []           # Current chunk being built (audio frames)
