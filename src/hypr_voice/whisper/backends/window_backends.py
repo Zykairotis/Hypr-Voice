@@ -27,6 +27,60 @@ from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+TRACE_ENABLED = os.getenv("HYPR_VOICE_TRACE", "0") == "1"
+TRACE_SLOW_MS = float(os.getenv("HYPR_VOICE_TRACE_SLOW_MS", "0"))
+
+# Cache statistics for monitoring
+_cache_stats = {
+    "reads": 0,
+    "writes": 0,
+    "hits": 0,
+    "misses": 0,
+    "read_time_ms": [],
+    "write_time_ms": [],
+}
+
+
+def _trace_duration(label: str, start_time: float, **fields) -> float:
+    """Log timing for a span if tracing is enabled or exceeds slow threshold."""
+    elapsed_ms = (time.perf_counter() - start_time) * 1000
+    should_log = TRACE_ENABLED or (TRACE_SLOW_MS > 0 and elapsed_ms >= TRACE_SLOW_MS)
+    if should_log:
+        field_str = " ".join(f"{k}={v}" for k, v in fields.items() if v is not None)
+        if field_str:
+            logger.info(f"[TRACE] {label} {elapsed_ms:.1f}ms {field_str}")
+        else:
+            logger.info(f"[TRACE] {label} {elapsed_ms:.1f}ms")
+    return elapsed_ms
+
+
+def get_cache_stats() -> Dict:
+    """Get cache statistics for monitoring."""
+    stats = dict(_cache_stats)
+    read_times = stats.pop("read_time_ms", [])
+    write_times = stats.pop("write_time_ms", [])
+    if read_times:
+        import statistics
+        stats["avg_read_ms"] = statistics.mean(read_times)
+        stats["total_read_ms"] = sum(read_times)
+    if write_times:
+        import statistics
+        stats["avg_write_ms"] = statistics.mean(write_times)
+        stats["total_write_ms"] = sum(write_times)
+    return stats
+
+
+def reset_cache_stats():
+    """Reset cache statistics."""
+    global _cache_stats
+    _cache_stats = {
+        "reads": 0,
+        "writes": 0,
+        "hits": 0,
+        "misses": 0,
+        "read_time_ms": [],
+        "write_time_ms": [],
+    }
 
 
 # ---------- helpers ----------
@@ -37,6 +91,7 @@ def _cmd_exists(cmd: str) -> bool:
 
 
 def _run_cmd(args, timeout: float = 1.5) -> Optional[str]:
+    start_time = time.perf_counter()
     try:
         result = subprocess.run(
             args,
@@ -44,9 +99,15 @@ def _run_cmd(args, timeout: float = 1.5) -> Optional[str]:
             text=True,
             timeout=timeout,
         )
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+        if TRACE_ENABLED or (TRACE_SLOW_MS > 0 and elapsed_ms >= TRACE_SLOW_MS):
+            logger.info("[TRACE] cmd=%s rc=%s %.1fms", args, result.returncode, elapsed_ms)
         if result.returncode == 0:
             return result.stdout.strip()
     except Exception as e:
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+        if TRACE_ENABLED or (TRACE_SLOW_MS > 0 and elapsed_ms >= TRACE_SLOW_MS):
+            logger.info("[TRACE] cmd=%s rc=error %.1fms", args, elapsed_ms)
         logger.debug("Command failed for %s: %s", args, e)
     return None
 
@@ -376,7 +437,9 @@ def detect_backend(preferred: Optional[str] = None) -> WindowBackend:
             logger.warning("Requested backend '%s' not available; falling back to auto", preference)
 
     cached = _read_cache(cache_file)
+    _cache_stats["reads"] += 1
     if cached:
+        _cache_stats["hits"] += 1
         cls = BACKEND_MAP.get(cached)
         if cls:
             candidate = cls()
@@ -385,6 +448,8 @@ def detect_backend(preferred: Optional[str] = None) -> WindowBackend:
                 return candidate
             else:
                 logger.info("Cached backend '%s' not available anymore; re-detecting", cached)
+    else:
+        _cache_stats["misses"] += 1
 
     for backend_cls in [
         HyprlandBackend,
@@ -404,18 +469,30 @@ def detect_backend(preferred: Optional[str] = None) -> WindowBackend:
 
 
 def _write_cache(path: Path, backend_name: str) -> None:
+    start = time.perf_counter()
     try:
         data = {"window_backend": backend_name, "detected_at": int(time.time())}
         path.write_text(json.dumps(data))
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        _cache_stats["writes"] += 1
+        _cache_stats["write_time_ms"].append(elapsed_ms)
+        _trace_duration("window_backend_cache_write", start, backend=backend_name)
     except Exception as e:
+        _trace_duration("window_backend_cache_write", start, backend=backend_name, error=str(e))
         logger.debug("Failed to write backend cache: %s", e)
 
 
 def _read_cache(path: Path) -> Optional[str]:
+    start = time.perf_counter()
     try:
         if not path.exists():
+            _trace_duration("window_backend_cache_read", start, hit=False, reason="not_found")
             return None
         data = json.loads(path.read_text())
-        return data.get("window_backend")
+        backend_name = data.get("window_backend")
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        _cache_stats["read_time_ms"].append(elapsed_ms)
+        _trace_duration("window_backend_cache_read", start, hit=bool(backend_name), backend=backend_name)
+        return backend_name
     except Exception:
         return None
