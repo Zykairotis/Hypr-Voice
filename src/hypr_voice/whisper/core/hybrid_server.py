@@ -20,6 +20,15 @@ import shutil
 import aiohttp
 import torch
 import requests
+import httpx
+
+# Try to import orjson for faster JSON serialization (5-10x faster)
+try:
+    import orjson
+    ORJSON_AVAILABLE = True
+except ImportError:
+    orjson = None
+    ORJSON_AVAILABLE = False
 
 import numpy as np
 import uvicorn
@@ -90,7 +99,36 @@ FLOW_USE_BASETEN = bool(FLOW_BASETEN_URL and FLOW_JWT_TOKEN)
 # Set FLOW_DIRECT_MODE=0 to use legacy API server mode
 FLOW_DIRECT_MODE = os.getenv("FLOW_DIRECT_MODE", "1") == "1"
 
+# HTTP client mode: use httpx async with HTTP/2 for faster requests (default: enabled)
+# Set FLOW_USE_HTTPX=0 to fall back to sync requests.Session
+FLOW_USE_HTTPX = os.getenv("FLOW_USE_HTTPX", "1") == "1"
+
+# Legacy sync session (fallback)
 _flow_session = requests.Session()
+
+# Async HTTP client with HTTP/2 support (lazy initialized)
+_flow_http_client: Optional[httpx.AsyncClient] = None
+
+
+def _get_flow_http_client() -> httpx.AsyncClient:
+    """Get/create persistent async HTTP client with HTTP/2 and connection pooling."""
+    global _flow_http_client
+    if _flow_http_client is None:
+        _flow_http_client = httpx.AsyncClient(
+            http2=True,
+            timeout=httpx.Timeout(FLOW_TIMEOUT),
+            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+        )
+    return _flow_http_client
+
+
+async def _close_flow_http_client():
+    """Close the async HTTP client on shutdown."""
+    global _flow_http_client
+    if _flow_http_client is not None:
+        await _flow_http_client.aclose()
+        _flow_http_client = None
+
 
 # Direct flow client (lazy initialized)
 _direct_flow_client = None
@@ -1323,7 +1361,33 @@ async def _flow_transcribe_chunks_parallel(
 
 
 def _flow_transcribe_base64(session, audio_base64: str, audio_encoding: str = "wav", before_text: Optional[str] = None) -> Dict[str, Optional[str]]:
-    """Send base64 audio to Wispr Flow API and return result dict."""
+    """Send base64 audio to Wispr Flow API and return result dict (sync fallback).
+    
+    Note: Prefer using _flow_transcribe_base64_async for better performance.
+    This sync version is kept for backward compatibility.
+    """
+    # If in async context and httpx is enabled, use async version via event loop
+    if FLOW_USE_HTTPX:
+        try:
+            loop = asyncio.get_running_loop()
+            # We're in an async context, create a task
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                future = pool.submit(
+                    asyncio.run,
+                    _flow_transcribe_base64_async(session, audio_base64, audio_encoding, before_text)
+                )
+                return future.result()
+        except RuntimeError:
+            # No running loop, run directly
+            return asyncio.run(_flow_transcribe_base64_async(session, audio_base64, audio_encoding, before_text))
+    
+    # Fallback: use sync requests
+    return _flow_transcribe_base64_sync(session, audio_base64, audio_encoding, before_text)
+
+
+def _flow_transcribe_base64_sync(session, audio_base64: str, audio_encoding: str = "wav", before_text: Optional[str] = None) -> Dict[str, Optional[str]]:
+    """Send base64 audio to Wispr Flow API using sync requests (legacy fallback)."""
     app_context = _get_flow_app_context()
     dictionary_words = _get_flow_dictionary_words()
     payload_chars = len(audio_base64) if audio_base64 else 0
@@ -1403,6 +1467,7 @@ def _flow_transcribe_base64(session, audio_base64: str, audio_encoding: str = "w
         "payload_chars": payload_chars,
         "audio_encoding": audio_encoding,
         "baseten": FLOW_USE_BASETEN,
+        "client": "requests",
     }
 
     if response.status_code != 200:
@@ -1424,6 +1489,172 @@ def _flow_transcribe_base64(session, audio_base64: str, audio_encoding: str = "w
     else:
         data = response.json()
         logger.info(f"🔍 Flow proxy response: {data}")
+        text = data.get("text")
+    
+    logger.info(f"📝 Extracted text: '{text}'")
+    
+    if text:
+        text = clean_text(text)
+        if vocabulary_manager and text:
+            try:
+                text = vocabulary_manager.post_process_transcription(text)
+            except Exception as e:
+                logger.debug(f"Flow vocabulary post-process failed: {e}")
+        
+        # Update cumulative text for session continuity
+        if hasattr(session, 'cumulative_text'):
+            session.cumulative_text = (session.cumulative_text + " " + text).strip()
+        
+        return {
+            "success": True,
+            "text": text,
+            "metadata": metadata,
+        }
+
+    return {
+        "success": False,
+        "error": str(data),
+        "metadata": metadata,
+    }
+
+
+async def _flow_transcribe_base64_async(session, audio_base64: str, audio_encoding: str = "wav", before_text: Optional[str] = None) -> Dict[str, Optional[str]]:
+    """Send base64 audio to Wispr Flow API using async httpx with HTTP/2 (optimized).
+    
+    Performance improvements:
+    - HTTP/2 multiplexing for connection reuse
+    - orjson for ~5-10x faster JSON serialization
+    - Async I/O for non-blocking requests
+    """
+    app_context = _get_flow_app_context()
+    dictionary_words = _get_flow_dictionary_words()
+    payload_chars = len(audio_base64) if audio_base64 else 0
+
+    # Build payload matching Wispr Flow desktop app structure exactly
+    if FLOW_USE_BASETEN:
+        # Direct Baseten API - use exact structure from test_wisperv2.py
+        payload = {
+            "request": {
+                "access_token": FLOW_JWT_TOKEN,
+                "user": {"uuid": FLOW_USER_UUID},
+                "metadata": {
+                    "session_id": session.session_id,
+                    "environment": "production",
+                    "client_platform": "win32",  # Mimic Windows to blend in
+                    "client_version": "1.4.205",
+                    "transcript_entity_uuid": str(uuid.uuid4()),
+                },
+                "audio": audio_base64,
+                "audio_encoding": audio_encoding,
+                "language": [session.language] if session.language else ["en"],
+                "context": {
+                    "app": {
+                        "name": app_context.get("app_name"),
+                        "type": app_context.get("app_type", "other"),
+                    },
+                    "dictionary_context": dictionary_words,
+                    "textbox_contents": {
+                        "before_text": before_text or "",
+                        "selected_text": "",
+                        "after_text": "",
+                    },
+                },
+                "prev_asr_text": session.cumulative_text[-2000:] if hasattr(session, 'cumulative_text') and session.cumulative_text else "",
+            }
+        }
+        endpoint_url = FLOW_BASETEN_URL
+        headers = {
+            "Authorization": f"Api-Key {FLOW_BASETEN_API_KEY}",
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 WisprFlow/1.4.205",
+        }
+    else:
+        # Local proxy mode - simpler structure
+        payload = {
+            "audio_base64": audio_base64,
+            "audio_encoding": audio_encoding,
+            "language": [session.language] if session.language else ["en"],
+            "app_type": app_context.get("app_type", "other"),
+            "app_name": app_context.get("app_name"),
+            "dictionary_words": dictionary_words,
+        }
+        if hasattr(session, 'cumulative_text') and session.cumulative_text:
+            payload["prev_asr_text"] = session.cumulative_text[-2000:]
+        if before_text:
+            payload["before_text"] = before_text
+        endpoint_url = f"{FLOW_SERVER_URL}/transcribe"
+        headers = {}
+
+    request_start = time.perf_counter()
+    
+    # Use orjson for faster JSON serialization if available
+    if ORJSON_AVAILABLE:
+        content = orjson.dumps(payload)
+        headers["Content-Type"] = "application/json"
+    else:
+        content = None  # Will use json parameter instead
+    
+    client = _get_flow_http_client()
+    
+    try:
+        if ORJSON_AVAILABLE:
+            response = await client.post(endpoint_url, content=content, headers=headers)
+        else:
+            response = await client.post(endpoint_url, json=payload, headers=headers)
+    except httpx.TimeoutException as e:
+        return {
+            "success": False,
+            "error": f"Request timeout after {FLOW_TIMEOUT}s: {e}",
+            "metadata": {"client": "httpx_async", "timeout": True},
+        }
+    except httpx.HTTPError as e:
+        return {
+            "success": False,
+            "error": f"HTTP error: {e}",
+            "metadata": {"client": "httpx_async"},
+        }
+    
+    network_ms = _trace_duration(
+        "flow_http_post_async",
+        request_start,
+        status=response.status_code,
+        payload_chars=payload_chars,
+        encoding=audio_encoding,
+        baseten=FLOW_USE_BASETEN,
+        http2=response.http_version == "HTTP/2",
+    )
+    metadata = {
+        "network_ms": network_ms,
+        "payload_chars": payload_chars,
+        "audio_encoding": audio_encoding,
+        "baseten": FLOW_USE_BASETEN,
+        "client": "httpx_async",
+        "http_version": response.http_version,
+    }
+
+    if response.status_code != 200:
+        return {
+            "success": False,
+            "error": f"Flow server HTTP {response.status_code}: {response.text}",
+            "metadata": metadata,
+        }
+
+    # Parse response using orjson if available (faster)
+    if ORJSON_AVAILABLE:
+        data = orjson.loads(response.content)
+    else:
+        data = response.json()
+
+    # Handle Baseten response format vs local proxy format
+    if FLOW_USE_BASETEN:
+        logger.info(f"🔍 Baseten API response (httpx): {data}")
+        # Baseten wraps response - extract the actual data
+        if isinstance(data, dict) and "asr_text" in data:
+            text = data.get("asr_text") or data.get("pipeline_text") or data.get("llm_text")
+        else:
+            text = data.get("text")
+    else:
+        logger.info(f"🔍 Flow proxy response (httpx): {data}")
         text = data.get("text")
     
     logger.info(f"📝 Extracted text: '{text}'")
