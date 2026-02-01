@@ -1113,12 +1113,40 @@ def _encode_audio_data_for_flow(audio_data: np.ndarray) -> tuple:
     return audio_base64, "wav"
 
 
+def _is_opus_file(file_path: str) -> bool:
+    """Check if file is an Opus file by extension and magic bytes."""
+    if not file_path.lower().endswith('.opus'):
+        return False
+    try:
+        with open(file_path, "rb") as f:
+            header = f.read(36)
+            # Opus in Ogg container starts with 'OggS'
+            return header[:4] == b'OggS'
+    except Exception:
+        return False
+
+
 def _encode_audio_for_flow(file_path: str, content_type: Optional[str]) -> tuple:
     """Load audio and return (base64_data, encoding_type).
     
     Uses Opus encoding if FLOW_USE_OPUS=1 (default) for ~5x faster uploads.
     Falls back to WAV if Opus encoding fails.
+    
+    OPTIMIZATION: If input is already Opus (recorded directly), use it as-is
+    without re-encoding, saving significant processing time.
     """
+    # Check if file is already Opus - if so, use it directly
+    if _is_opus_file(file_path):
+        try:
+            with open(file_path, "rb") as f:
+                opus_data = f.read()
+            if opus_data:
+                audio_base64 = base64.b64encode(opus_data).decode("utf-8")
+                logger.info(f"🚀 Using pre-encoded Opus: {len(opus_data)} bytes ({len(audio_base64)} base64 chars)")
+                return audio_base64, "opus"
+        except Exception as e:
+            logger.warning(f"Failed to read Opus file directly: {e}, falling back to re-encode")
+    
     raw_bytes = None
     try:
         with open(file_path, "rb") as f:
