@@ -20,6 +20,15 @@ import shutil
 import aiohttp
 import torch
 import requests
+import httpx
+
+# Try to import orjson for faster JSON serialization (5-10x faster)
+try:
+    import orjson
+    ORJSON_AVAILABLE = True
+except ImportError:
+    orjson = None
+    ORJSON_AVAILABLE = False
 
 import numpy as np
 import uvicorn
@@ -90,7 +99,36 @@ FLOW_USE_BASETEN = bool(FLOW_BASETEN_URL and FLOW_JWT_TOKEN)
 # Set FLOW_DIRECT_MODE=0 to use legacy API server mode
 FLOW_DIRECT_MODE = os.getenv("FLOW_DIRECT_MODE", "1") == "1"
 
+# HTTP client mode: use httpx async with HTTP/2 for faster requests (default: enabled)
+# Set FLOW_USE_HTTPX=0 to fall back to sync requests.Session
+FLOW_USE_HTTPX = os.getenv("FLOW_USE_HTTPX", "1") == "1"
+
+# Legacy sync session (fallback)
 _flow_session = requests.Session()
+
+# Async HTTP client with HTTP/2 support (lazy initialized)
+_flow_http_client: Optional[httpx.AsyncClient] = None
+
+
+def _get_flow_http_client() -> httpx.AsyncClient:
+    """Get/create persistent async HTTP client with HTTP/2 and connection pooling."""
+    global _flow_http_client
+    if _flow_http_client is None:
+        _flow_http_client = httpx.AsyncClient(
+            http2=True,
+            timeout=httpx.Timeout(FLOW_TIMEOUT),
+            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+        )
+    return _flow_http_client
+
+
+async def _close_flow_http_client():
+    """Close the async HTTP client on shutdown."""
+    global _flow_http_client
+    if _flow_http_client is not None:
+        await _flow_http_client.aclose()
+        _flow_http_client = None
+
 
 # Direct flow client (lazy initialized)
 _direct_flow_client = None
@@ -175,6 +213,32 @@ console_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 logger.addHandler(console_handler)
 
+# ============================================================================
+# TRACE LOGGING (OPTIONAL, FOR PERFORMANCE MONITORING)
+# ============================================================================
+# Trace configuration
+TRACE_ENABLED = os.getenv("HYPR_VOICE_TRACE", "0") == "1"
+TRACE_SLOW_MS = float(os.getenv("HYPR_VOICE_TRACE_SLOW_MS", "0"))
+
+# Flow mode specific trace controls
+HYPR_VOICE_FLOW_TRACE = os.getenv("HYPR_VOICE_FLOW_TRACE", "0") == "1"
+HYPR_VOICE_TRACE_CONTEXT = os.getenv("HYPR_VOICE_TRACE_CONTEXT", "1") == "1"
+HYPR_VOICE_TRACE_TCPGEN = os.getenv("HYPR_VOICE_TRACE_TCPGEN", "1") == "1"
+HYPR_VOICE_TRACE_QUEUE = os.getenv("HYPR_VOICE_TRACE_QUEUE", "1") == "1"
+
+
+def _trace_duration(label: str, start_time: float, **fields) -> float:
+    """Log timing for a span if tracing is enabled or exceeds slow threshold."""
+    elapsed_ms = (time.perf_counter() - start_time) * 1000
+    should_log = TRACE_ENABLED or (TRACE_SLOW_MS > 0 and elapsed_ms >= TRACE_SLOW_MS)
+    if should_log:
+        field_str = " ".join(f"{k}={v}" for k, v in fields.items() if v is not None)
+        if field_str:
+            logger.info(f"[TRACE] {label} {elapsed_ms:.1f}ms {field_str}")
+        else:
+            logger.info(f"[TRACE] {label} {elapsed_ms:.1f}ms")
+    return elapsed_ms
+
 # Import vocabulary manager after logger setup
 # Use absolute import that works whether run as module or script
 try:
@@ -207,6 +271,16 @@ try:
 except ImportError as e:
     logger.warning(f"Application detector not found: {e}, context-aware vocabulary disabled")
     APP_DETECTOR_ENABLED = False
+
+# Import window backend cache stats for monitoring
+_window_backend_cache_stats_enabled = False
+try:
+    from ..backends.window_backends import get_cache_stats, reset_cache_stats
+    _window_backend_cache_stats_enabled = True
+    logger.debug("Window backend cache stats available for monitoring")
+except ImportError:
+    get_cache_stats = None
+    reset_cache_stats = None
 
 # ============================================================================
 # PYDANTIC MODELS
@@ -390,14 +464,27 @@ def load_whisper_model():
 def preprocess_audio(audio_data, original_sr):
     """Preprocess audio data to match Whisper requirements (16kHz, mono, float32)."""
     try:
+        start_time = time.perf_counter()
+        input_samples = len(audio_data) if hasattr(audio_data, "__len__") else None
+        resampled = False
         if audio_data.ndim > 1 and audio_data.shape[1] > 1:
             audio_data = np.mean(audio_data, axis=1)
         
         if original_sr != 16000:
             import scipy.signal as signal
             audio_data = signal.resample(audio_data, int(len(audio_data) * 16000 / original_sr))
+            resampled = True
         
-        return audio_data.astype(np.float32)
+        output = audio_data.astype(np.float32)
+        _trace_duration(
+            "preprocess_audio",
+            start_time,
+            original_sr=original_sr,
+            input_samples=input_samples,
+            output_samples=len(output),
+            resampled=resampled,
+        )
+        return output
     except Exception as e:
         logger.error(f"Error in audio preprocessing: {e}")
         return np.zeros(16000, dtype=np.float32)
@@ -453,13 +540,30 @@ def log_transcription(text, session_id=None):
 def process_video_to_audio(video_path: str):
     """Extract audio from video file."""
     try:
+        start_time = time.perf_counter()
+        ffmpeg_start = time.perf_counter()
         out, err = (
             ffmpeg
             .input(video_path)
             .output('pipe:', format='wav', acodec='pcm_s16le', ac=1, ar=SAMPLE_RATE)
             .run(capture_stdout=True, capture_stderr=True)
         )
+        _trace_duration(
+            "ffmpeg_extract_audio",
+            ffmpeg_start,
+            file=os.path.basename(video_path),
+            stdout_bytes=len(out) if out else 0,
+            stderr_bytes=len(err) if err else 0,
+        )
+        decode_start = time.perf_counter()
         audio_data, sample_rate = sf.read(BytesIO(out))
+        _trace_duration(
+            "ffmpeg_decode_audio",
+            decode_start,
+            samples=len(audio_data) if hasattr(audio_data, "__len__") else None,
+            sample_rate=sample_rate,
+        )
+        _trace_duration("process_video_to_audio_total", start_time, file=os.path.basename(video_path))
         return audio_data, sample_rate
     except Exception as e:
         logger.error(f"Error processing video to audio: {e}")
@@ -468,10 +572,13 @@ def process_video_to_audio(video_path: str):
 
 def _get_flow_app_context() -> Dict[str, Optional[str]]:
     """Derive app name/type for Wispr Flow context."""
+    start = time.perf_counter()
     window_info = globals().get("cached_window_info")
     app_class = ""
     app_title = ""
+    cached = False
     if window_info:
+        cached = True
         app_class = window_info.get('class', '') or window_info.get('initialClass', '')
         app_title = window_info.get('title', '') or window_info.get('initialTitle', '')
 
@@ -489,15 +596,18 @@ def _get_flow_app_context() -> Dict[str, Optional[str]]:
     elif app_lower in ['gmail', 'outlook', 'thunderbird', 'mail']:
         app_type = "email"
 
+    _trace_duration("flow_context_app", start, app_name=app_name, app_type=app_type, cached=cached)
     return {"app_name": app_name, "app_type": app_type}
 
 
 def _get_flow_dictionary_words(max_words: Optional[int] = None) -> List[str]:
     """Collect a compact list of vocabulary words for Wispr Flow."""
+    start = time.perf_counter()
     if max_words is None:
         max_words = FLOW_MAX_DICTIONARY_WORDS
     manager = globals().get("vocabulary_manager")
     if not manager:
+        _trace_duration("flow_context_dict", start, count=0, cached="no_manager")
         return []
     try:
         if hasattr(manager, "_prioritize_keywords"):
@@ -506,9 +616,12 @@ def _get_flow_dictionary_words(max_words: Optional[int] = None) -> List[str]:
             words = list(manager.active_keywords)
         # Deduplicate while preserving order
         deduped = list(dict.fromkeys(words))
-        return deduped[:max_words]
+        result = deduped[:max_words]
+        _trace_duration("flow_context_dict", start, count=len(result), cached="no")
+        return result
     except Exception as e:
         logger.debug(f"Flow dictionary build failed: {e}")
+        _trace_duration("flow_context_dict", start, count=0, error=str(e))
         return []
 
 
@@ -537,45 +650,60 @@ def _get_direct_flow_client():
 
 def _get_flow_user_context() -> Dict[str, Optional[str]]:
     """Get user information for transcription context (helps spell names correctly)."""
+    start = time.perf_counter()
     # Try to get from environment or config
     user_first_name = os.getenv("WISPR_FLOW_USER_FIRST_NAME")
     user_last_name = os.getenv("WISPR_FLOW_USER_LAST_NAME")
-    
+
     # Fallback: try to extract from vocabulary manager user context
     if vocabulary_manager and hasattr(vocabulary_manager, 'user_context'):
         ctx = vocabulary_manager.user_context
         if ctx:
             user_first_name = user_first_name or ctx.get('first_name')
             user_last_name = user_last_name or ctx.get('last_name')
-    
-    return {
+
+    result = {
         "user_first_name": user_first_name,
         "user_last_name": user_last_name,
     }
+    _trace_duration("flow_context_user", start, has_first=bool(user_first_name), has_last=bool(user_last_name))
+    return result
 
 
 def _get_flow_text_context() -> Dict[str, Any]:
     """
     Get text context from Hyprland system (clipboard, selected text).
-    
+
     Uses wl-paste for clipboard content which provides context for:
     - Smart punctuation and capitalization
     - Understanding what the user is working on
     """
+    start = time.perf_counter()
     import subprocess
-    
+
     before_text = ""
     after_text = ""
     selected_text = ""
     content_text = None
-    
+    clipboard_time = 0
+    primary_time = 0
+
     # Get current clipboard content as context
     try:
+        run_start = time.perf_counter()
         result = subprocess.run(
             ['wl-paste', '--no-newline'],
             capture_output=True,
             text=True,
             timeout=1
+        )
+        clipboard_time = (time.perf_counter() - run_start) * 1000
+        _trace_duration(
+            "wl-paste",
+            run_start,
+            primary=False,
+            rc=result.returncode,
+            stdout_chars=len(result.stdout) if result.stdout else 0,
         )
         if result.returncode == 0 and result.stdout:
             clipboard_content = result.stdout.strip()
@@ -592,14 +720,23 @@ def _get_flow_text_context() -> Dict[str, Any]:
         logger.debug("wl-paste not available")
     except Exception as e:
         logger.debug(f"Failed to get clipboard: {e}")
-    
+
     # Try to get primary selection (highlighted text) as selected_text
     try:
+        run_start = time.perf_counter()
         result = subprocess.run(
             ['wl-paste', '--primary', '--no-newline'],
             capture_output=True,
             text=True,
             timeout=1
+        )
+        primary_time = (time.perf_counter() - run_start) * 1000
+        _trace_duration(
+            "wl-paste",
+            run_start,
+            primary=True,
+            rc=result.returncode,
+            stdout_chars=len(result.stdout) if result.stdout else 0,
         )
         if result.returncode == 0 and result.stdout:
             selected = result.stdout.strip()
@@ -612,7 +749,12 @@ def _get_flow_text_context() -> Dict[str, Any]:
         pass
     except Exception as e:
         logger.debug(f"Failed to get primary selection: {e}")
-    
+
+    _trace_duration("flow_context_text", start,
+                    clipboard_ms=f"{clipboard_time:.1f}",
+                    primary_ms=f"{primary_time:.1f}",
+                    content_chars=len(content_text) if content_text else 0,
+                    selected_chars=len(selected_text))
     return {
         "before_text": before_text,
         "after_text": after_text,
@@ -624,33 +766,36 @@ def _get_flow_text_context() -> Dict[str, Any]:
 def _get_flow_code_context() -> Dict[str, List[str]]:
     """
     Get code context (variable names, file names) for better code transcription.
-    
+
     Extracts from:
     - Vocabulary manager active keywords
     - Shell history (recent commands, file paths)
     - Context manager data
     """
+    start = time.perf_counter()
+    import re
     variable_names = []
     file_names = []
-    
+    source = "none"
+
     # Try to get from vocabulary manager
     if vocabulary_manager:
         try:
             # Check if context_manager is available
             ctx_mgr = getattr(vocabulary_manager, 'context_manager', None)
-            
+
             if ctx_mgr:
+                source = "ctx_mgr"
                 # Get shell history for file paths and variable names
                 try:
                     shell_commands = ctx_mgr.get_shell_history(20)
                     for cmd in shell_commands:
                         # Extract file paths
-                        import re
                         paths = re.findall(r'[\w./\-_]+\.\w+', cmd)
                         for path in paths:
                             if path not in file_names:
                                 file_names.append(path)
-                        
+
                         # Extract potential variable names (camelCase, snake_case)
                         vars_found = re.findall(r'\b[a-z][a-zA-Z0-9_]*[A-Z][a-zA-Z0-9_]*\b|\b[a-z]+_[a-z_]+\b', cmd)
                         for var in vars_found:
@@ -658,28 +803,34 @@ def _get_flow_code_context() -> Dict[str, List[str]]:
                                 variable_names.append(var)
                 except Exception as e:
                     logger.debug(f"Failed to extract from shell history: {e}")
-            
+
             # Also extract from active keywords
             if hasattr(vocabulary_manager, 'active_keywords'):
+                source = "keywords"
                 for kw in vocabulary_manager.active_keywords:
                     # File-like patterns
                     if ('.' in kw and '/' not in kw and len(kw) > 3) or '/' in kw:
                         if kw not in file_names:
                             file_names.append(kw)
                     # Variable-like patterns (camelCase, snake_case, starts with _)
-                    elif (kw.startswith('_') or 
+                    elif (kw.startswith('_') or
                           (any(c.isupper() for c in kw[1:]) and kw[0].islower()) or
                           '_' in kw):
                         if kw not in variable_names:
                             variable_names.append(kw)
-                            
+
         except Exception as e:
             logger.debug(f"Failed to get code context: {e}")
-    
-    return {
+
+    result = {
         "variable_names": variable_names[:25],  # Limit to 25
         "file_names": file_names[:25],
     }
+    _trace_duration("flow_context_code", start,
+                    vars=len(result["variable_names"]),
+                    files=len(result["file_names"]),
+                    source=source)
+    return result
 
 
 async def _flow_transcribe_file_direct(
@@ -814,7 +965,25 @@ async def _flow_transcribe_file_direct(
         
         # Calculate total time
         timings['total_ms'] = (time.perf_counter() - total_start) * 1000
-        
+
+        # Get window backend cache stats if available
+        cache_stats_str = ""
+        if _window_backend_cache_stats_enabled and get_cache_stats:
+            try:
+                cache_stats = get_cache_stats()
+                if cache_stats.get('reads', 0) > 0:
+                    hit_rate = cache_stats.get('hits', 0) / cache_stats['reads'] * 100
+                    cache_stats_str = (
+                        f"   ───────────────────────────────────────────\n"
+                        f"   💾 CACHE STATS:         hits={cache_stats.get('hits', 0)} "
+                        f"misses={cache_stats.get('misses', 0)} "
+                        f"hit_rate={hit_rate:.0f}%\n"
+                        f"      ├─ Avg read:        {cache_stats.get('avg_read_ms', 0):.1f}ms\n"
+                        f"      └─ Avg write:       {cache_stats.get('avg_write_ms', 0):.1f}ms\n"
+                    )
+            except Exception as e:
+                logger.debug(f"Failed to get cache stats: {e}")
+
         # Log comprehensive timing summary
         meta = result.get("metadata", {})
         logger.info(
@@ -833,6 +1002,7 @@ async def _flow_transcribe_file_direct(
             f"      └─ Chunks:           {meta.get('chunk_count', 1)}\n"
             f"   ───────────────────────────────────────────\n"
             f"   📝 POST-PROCESS:        {timings['postprocess_ms']:7.1f}ms\n"
+            f"{cache_stats_str}"
             f"   ═══════════════════════════════════════════\n"
             f"   ⏱️ TOTAL PIPELINE:      {timings['total_ms']:7.1f}ms\n"
             f"   ═══════════════════════════════════════════\n"
@@ -858,6 +1028,7 @@ def _encode_audio_to_opus(audio_data: np.ndarray, bitrate: str = "24k") -> Optio
     import tempfile
     
     try:
+        total_start = time.perf_counter()
         # Write WAV to temp file
         with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as wav_file:
             sf.write(wav_file.name, audio_data, 16000, format="WAV", subtype="PCM_16")
@@ -865,12 +1036,29 @@ def _encode_audio_to_opus(audio_data: np.ndarray, bitrate: str = "24k") -> Optio
         
         opus_path = wav_path.replace('.wav', '.opus')
         
-        # Convert to Opus
+        # Convert to Opus with optimized settings for speed
+        # -compression_level 0: fastest encoding (vs default 10)
+        # -vbr off: constant bitrate (faster than variable bitrate)
+        # -application voip: optimized for speech (lower complexity)
+        ffmpeg_start = time.perf_counter()
         result = subprocess.run([
             'ffmpeg', '-y', '-i', wav_path,
-            '-c:a', 'libopus', '-b:a', bitrate, '-ar', '16000', '-ac', '1',
+            '-c:a', 'libopus',
+            '-b:a', bitrate,
+            '-compression_level', '0',  # Fastest encoding
+            '-vbr', 'off',  # Constant bitrate (faster)
+            '-application', 'voip',  # Optimized for speech
+            '-ar', '16000', '-ac', '1',
             opus_path
         ], capture_output=True, timeout=10)
+        _trace_duration(
+            "ffmpeg_opus_encode",
+            ffmpeg_start,
+            rc=getattr(result, "returncode", None),
+            stderr_bytes=len(result.stderr) if result.stderr else 0,
+            bitrate=bitrate,
+            samples=len(audio_data) if hasattr(audio_data, "__len__") else None,
+        )
         
         opus_data = None
         if os.path.exists(opus_path):
@@ -878,6 +1066,11 @@ def _encode_audio_to_opus(audio_data: np.ndarray, bitrate: str = "24k") -> Optio
                 opus_data = f.read()
             os.unlink(opus_path)
         os.unlink(wav_path)
+        _trace_duration(
+            "opus_encode_total",
+            total_start,
+            output_bytes=len(opus_data) if opus_data else 0,
+        )
         
         return opus_data
     except Exception as e:
@@ -885,12 +1078,75 @@ def _encode_audio_to_opus(audio_data: np.ndarray, bitrate: str = "24k") -> Optio
         return None
 
 
+def _encode_audio_data_for_flow(audio_data: np.ndarray) -> tuple:
+    """Encode preprocessed 16kHz mono audio data to base64 for Flow."""
+    encode_start = time.perf_counter()
+    # Try Opus encoding first (much smaller, faster upload)
+    if FLOW_USE_OPUS:
+        opus_data = _encode_audio_to_opus(audio_data, FLOW_OPUS_BITRATE)
+        if opus_data:
+            b64_start = time.perf_counter()
+            audio_base64 = base64.b64encode(opus_data).decode("utf-8")
+            _trace_duration(
+                "base64_encode_opus",
+                b64_start,
+                input_bytes=len(opus_data),
+                output_chars=len(audio_base64),
+            )
+            _trace_duration("encode_audio_total", encode_start, encoding="opus")
+            logger.debug(f"Opus encoded: {len(audio_data)*2} bytes WAV -> {len(opus_data)} bytes Opus")
+            return audio_base64, "opus"
+
+    # Fallback to WAV
+    wav_start = time.perf_counter()
+    buffer = BytesIO()
+    sf.write(buffer, audio_data, 16000, format="WAV", subtype="PCM_16")
+    wav_bytes = buffer.getvalue()
+    audio_base64 = base64.b64encode(wav_bytes).decode("utf-8")
+    _trace_duration(
+        "base64_encode_wav",
+        wav_start,
+        input_bytes=len(wav_bytes),
+        output_chars=len(audio_base64),
+    )
+    _trace_duration("encode_audio_total", encode_start, encoding="wav")
+    return audio_base64, "wav"
+
+
+def _is_opus_file(file_path: str) -> bool:
+    """Check if file is an Opus file by extension and magic bytes."""
+    if not file_path.lower().endswith('.opus'):
+        return False
+    try:
+        with open(file_path, "rb") as f:
+            header = f.read(36)
+            # Opus in Ogg container starts with 'OggS'
+            return header[:4] == b'OggS'
+    except Exception:
+        return False
+
+
 def _encode_audio_for_flow(file_path: str, content_type: Optional[str]) -> tuple:
     """Load audio and return (base64_data, encoding_type).
     
     Uses Opus encoding if FLOW_USE_OPUS=1 (default) for ~5x faster uploads.
     Falls back to WAV if Opus encoding fails.
+    
+    OPTIMIZATION: If input is already Opus (recorded directly), use it as-is
+    without re-encoding, saving significant processing time.
     """
+    # Check if file is already Opus - if so, use it directly
+    if _is_opus_file(file_path):
+        try:
+            with open(file_path, "rb") as f:
+                opus_data = f.read()
+            if opus_data:
+                audio_base64 = base64.b64encode(opus_data).decode("utf-8")
+                logger.info(f"🚀 Using pre-encoded Opus: {len(opus_data)} bytes ({len(audio_base64)} base64 chars)")
+                return audio_base64, "opus"
+        except Exception as e:
+            logger.warning(f"Failed to read Opus file directly: {e}, falling back to re-encode")
+    
     raw_bytes = None
     try:
         with open(file_path, "rb") as f:
@@ -946,17 +1202,7 @@ def _encode_audio_for_flow(file_path: str, content_type: Optional[str]) -> tuple
         except Exception as e:
             logger.debug(f"Flow silence trim failed: {e}")
 
-    # Try Opus encoding first (much smaller, faster upload)
-    if FLOW_USE_OPUS:
-        opus_data = _encode_audio_to_opus(audio_data, FLOW_OPUS_BITRATE)
-        if opus_data:
-            logger.debug(f"Opus encoded: {len(audio_data)*2} bytes WAV -> {len(opus_data)} bytes Opus")
-            return base64.b64encode(opus_data).decode("utf-8"), "opus"
-
-    # Fallback to WAV
-    buffer = BytesIO()
-    sf.write(buffer, audio_data, 16000, format="WAV", subtype="PCM_16")
-    return base64.b64encode(buffer.getvalue()).decode("utf-8"), "wav"
+    return _encode_audio_data_for_flow(audio_data)
 
 
 def _audio_to_base64_wav(audio_data: np.ndarray) -> str:
@@ -1143,9 +1389,36 @@ async def _flow_transcribe_chunks_parallel(
 
 
 def _flow_transcribe_base64(session, audio_base64: str, audio_encoding: str = "wav", before_text: Optional[str] = None) -> Dict[str, Optional[str]]:
-    """Send base64 audio to Wispr Flow API and return result dict."""
+    """Send base64 audio to Wispr Flow API and return result dict (sync fallback).
+    
+    Note: Prefer using _flow_transcribe_base64_async for better performance.
+    This sync version is kept for backward compatibility.
+    """
+    # If in async context and httpx is enabled, use async version via event loop
+    if FLOW_USE_HTTPX:
+        try:
+            loop = asyncio.get_running_loop()
+            # We're in an async context, create a task
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                future = pool.submit(
+                    asyncio.run,
+                    _flow_transcribe_base64_async(session, audio_base64, audio_encoding, before_text)
+                )
+                return future.result()
+        except RuntimeError:
+            # No running loop, run directly
+            return asyncio.run(_flow_transcribe_base64_async(session, audio_base64, audio_encoding, before_text))
+    
+    # Fallback: use sync requests
+    return _flow_transcribe_base64_sync(session, audio_base64, audio_encoding, before_text)
+
+
+def _flow_transcribe_base64_sync(session, audio_base64: str, audio_encoding: str = "wav", before_text: Optional[str] = None) -> Dict[str, Optional[str]]:
+    """Send base64 audio to Wispr Flow API using sync requests (legacy fallback)."""
     app_context = _get_flow_app_context()
     dictionary_words = _get_flow_dictionary_words()
+    payload_chars = len(audio_base64) if audio_base64 else 0
 
     # Build payload matching Wispr Flow desktop app structure exactly
     if FLOW_USE_BASETEN:
@@ -1202,17 +1475,34 @@ def _flow_transcribe_base64(session, audio_base64: str, audio_encoding: str = "w
         endpoint_url = f"{FLOW_SERVER_URL}/transcribe"
         headers = {}
 
+    request_start = time.perf_counter()
     response = _flow_session.post(
         endpoint_url,
         json=payload,
         headers=headers,
         timeout=FLOW_TIMEOUT
     )
+    network_ms = _trace_duration(
+        "flow_http_post",
+        request_start,
+        status=response.status_code,
+        payload_chars=payload_chars,
+        encoding=audio_encoding,
+        baseten=FLOW_USE_BASETEN,
+    )
+    metadata = {
+        "network_ms": network_ms,
+        "payload_chars": payload_chars,
+        "audio_encoding": audio_encoding,
+        "baseten": FLOW_USE_BASETEN,
+        "client": "requests",
+    }
 
     if response.status_code != 200:
         return {
             "success": False,
             "error": f"Flow server HTTP {response.status_code}: {response.text}",
+            "metadata": metadata,
         }
 
     # Handle Baseten response format vs local proxy format
@@ -1246,11 +1536,179 @@ def _flow_transcribe_base64(session, audio_base64: str, audio_encoding: str = "w
         return {
             "success": True,
             "text": text,
+            "metadata": metadata,
         }
 
     return {
         "success": False,
         "error": str(data),
+        "metadata": metadata,
+    }
+
+
+async def _flow_transcribe_base64_async(session, audio_base64: str, audio_encoding: str = "wav", before_text: Optional[str] = None) -> Dict[str, Optional[str]]:
+    """Send base64 audio to Wispr Flow API using async httpx with HTTP/2 (optimized).
+    
+    Performance improvements:
+    - HTTP/2 multiplexing for connection reuse
+    - orjson for ~5-10x faster JSON serialization
+    - Async I/O for non-blocking requests
+    """
+    app_context = _get_flow_app_context()
+    dictionary_words = _get_flow_dictionary_words()
+    payload_chars = len(audio_base64) if audio_base64 else 0
+
+    # Build payload matching Wispr Flow desktop app structure exactly
+    if FLOW_USE_BASETEN:
+        # Direct Baseten API - use exact structure from test_wisperv2.py
+        payload = {
+            "request": {
+                "access_token": FLOW_JWT_TOKEN,
+                "user": {"uuid": FLOW_USER_UUID},
+                "metadata": {
+                    "session_id": session.session_id,
+                    "environment": "production",
+                    "client_platform": "win32",  # Mimic Windows to blend in
+                    "client_version": "1.4.205",
+                    "transcript_entity_uuid": str(uuid.uuid4()),
+                },
+                "audio": audio_base64,
+                "audio_encoding": audio_encoding,
+                "language": [session.language] if session.language else ["en"],
+                "context": {
+                    "app": {
+                        "name": app_context.get("app_name"),
+                        "type": app_context.get("app_type", "other"),
+                    },
+                    "dictionary_context": dictionary_words,
+                    "textbox_contents": {
+                        "before_text": before_text or "",
+                        "selected_text": "",
+                        "after_text": "",
+                    },
+                },
+                "prev_asr_text": session.cumulative_text[-2000:] if hasattr(session, 'cumulative_text') and session.cumulative_text else "",
+            }
+        }
+        endpoint_url = FLOW_BASETEN_URL
+        headers = {
+            "Authorization": f"Api-Key {FLOW_BASETEN_API_KEY}",
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 WisprFlow/1.4.205",
+        }
+    else:
+        # Local proxy mode - simpler structure
+        payload = {
+            "audio_base64": audio_base64,
+            "audio_encoding": audio_encoding,
+            "language": [session.language] if session.language else ["en"],
+            "app_type": app_context.get("app_type", "other"),
+            "app_name": app_context.get("app_name"),
+            "dictionary_words": dictionary_words,
+        }
+        if hasattr(session, 'cumulative_text') and session.cumulative_text:
+            payload["prev_asr_text"] = session.cumulative_text[-2000:]
+        if before_text:
+            payload["before_text"] = before_text
+        endpoint_url = f"{FLOW_SERVER_URL}/transcribe"
+        headers = {}
+
+    request_start = time.perf_counter()
+    
+    # Use orjson for faster JSON serialization if available
+    if ORJSON_AVAILABLE:
+        content = orjson.dumps(payload)
+        headers["Content-Type"] = "application/json"
+    else:
+        content = None  # Will use json parameter instead
+    
+    client = _get_flow_http_client()
+    
+    try:
+        if ORJSON_AVAILABLE:
+            response = await client.post(endpoint_url, content=content, headers=headers)
+        else:
+            response = await client.post(endpoint_url, json=payload, headers=headers)
+    except httpx.TimeoutException as e:
+        return {
+            "success": False,
+            "error": f"Request timeout after {FLOW_TIMEOUT}s: {e}",
+            "metadata": {"client": "httpx_async", "timeout": True},
+        }
+    except httpx.HTTPError as e:
+        return {
+            "success": False,
+            "error": f"HTTP error: {e}",
+            "metadata": {"client": "httpx_async"},
+        }
+    
+    network_ms = _trace_duration(
+        "flow_http_post_async",
+        request_start,
+        status=response.status_code,
+        payload_chars=payload_chars,
+        encoding=audio_encoding,
+        baseten=FLOW_USE_BASETEN,
+        http2=response.http_version == "HTTP/2",
+    )
+    metadata = {
+        "network_ms": network_ms,
+        "payload_chars": payload_chars,
+        "audio_encoding": audio_encoding,
+        "baseten": FLOW_USE_BASETEN,
+        "client": "httpx_async",
+        "http_version": response.http_version,
+    }
+
+    if response.status_code != 200:
+        return {
+            "success": False,
+            "error": f"Flow server HTTP {response.status_code}: {response.text}",
+            "metadata": metadata,
+        }
+
+    # Parse response using orjson if available (faster)
+    if ORJSON_AVAILABLE:
+        data = orjson.loads(response.content)
+    else:
+        data = response.json()
+
+    # Handle Baseten response format vs local proxy format
+    if FLOW_USE_BASETEN:
+        logger.info(f"🔍 Baseten API response (httpx): {data}")
+        # Baseten wraps response - extract the actual data
+        if isinstance(data, dict) and "asr_text" in data:
+            text = data.get("asr_text") or data.get("pipeline_text") or data.get("llm_text")
+        else:
+            text = data.get("text")
+    else:
+        logger.info(f"🔍 Flow proxy response (httpx): {data}")
+        text = data.get("text")
+    
+    logger.info(f"📝 Extracted text: '{text}'")
+    
+    if text:
+        text = clean_text(text)
+        if vocabulary_manager and text:
+            try:
+                text = vocabulary_manager.post_process_transcription(text)
+            except Exception as e:
+                logger.debug(f"Flow vocabulary post-process failed: {e}")
+        
+        # Update cumulative text for session continuity
+        if hasattr(session, 'cumulative_text'):
+            session.cumulative_text = (session.cumulative_text + " " + text).strip()
+        
+        return {
+            "success": True,
+            "text": text,
+            "metadata": metadata,
+        }
+
+    return {
+        "success": False,
+        "error": str(data),
+        "metadata": metadata,
     }
 
 
@@ -1286,7 +1744,11 @@ async def _flow_transcribe_file_api(session, file_path: str, content_type: Optio
     
     Note: Consider using FLOW_DIRECT_MODE=1 for better performance.
     """
+    timings: Dict[str, Any] = {}
+    total_start = time.perf_counter()
+
     # Load and preprocess audio
+    load_start = time.perf_counter()
     try:
         if content_type and "video" in content_type:
             audio_data, sample_rate = process_video_to_audio(file_path)
@@ -1294,10 +1756,24 @@ async def _flow_transcribe_file_api(session, file_path: str, content_type: Optio
             audio_data, sample_rate = sf.read(file_path)
     except Exception:
         audio_data, sample_rate = process_video_to_audio(file_path)
+    timings["load_ms"] = _trace_duration(
+        "flow_api_load_audio",
+        load_start,
+        file=os.path.basename(file_path),
+        content_type=content_type,
+    )
 
+    preprocess_start = time.perf_counter()
     processed = preprocess_audio(audio_data, sample_rate)
+    timings["preprocess_ms"] = _trace_duration(
+        "flow_api_preprocess",
+        preprocess_start,
+        samples=len(processed),
+        sample_rate=sample_rate,
+    )
 
     # Trim silence if enabled
+    trim_start = time.perf_counter()
     if FLOW_TRIM_SILENCE:
         try:
             abs_audio = np.abs(processed)
@@ -1309,25 +1785,77 @@ async def _flow_transcribe_file_api(session, file_path: str, content_type: Optio
                 processed = processed[start:end]
         except Exception as e:
             logger.debug(f"Flow silence trim failed: {e}")
+    timings["trim_ms"] = _trace_duration(
+        "flow_api_trim_silence",
+        trim_start,
+        enabled=FLOW_TRIM_SILENCE,
+        samples=len(processed),
+    ) if FLOW_TRIM_SILENCE else 0.0
 
     # Calculate audio duration and estimated base64 size
     audio_duration = len(processed) / 16000
     # Estimate base64 size (Opus is ~1/13th of WAV)
     estimated_base64_mb = (len(processed) * 2) / (1024 * 1024) / 13
 
+    def _finalize_result(result: Dict[str, Any], mode: str, chunk_count: int, audio_encoding: Optional[str] = None) -> Dict[str, Any]:
+        timings["total_ms"] = (time.perf_counter() - total_start) * 1000
+        timings["mode"] = mode
+        timings["chunk_count"] = chunk_count
+        timings["audio_seconds"] = audio_duration
+        timings["estimated_base64_mb"] = estimated_base64_mb
+        if audio_encoding:
+            timings["audio_encoding"] = audio_encoding
+        meta = result.get("metadata", {}) if isinstance(result, dict) else {}
+        if meta.get("network_ms") is not None:
+            timings["network_ms"] = meta.get("network_ms")
+        result["metadata"] = {**meta, **timings}
+        logger.info(
+            f"[FLOW API] mode={mode} total={timings['total_ms']:.1f}ms "
+            f"load={timings.get('load_ms', 0):.1f}ms preprocess={timings.get('preprocess_ms', 0):.1f}ms "
+            f"trim={timings.get('trim_ms', 0):.1f}ms encode={timings.get('encode_ms', 0):.1f}ms "
+            f"network={timings.get('network_ms', 0):.1f}ms audio={audio_duration:.2f}s "
+            f"chunks={chunk_count} encoding={audio_encoding or meta.get('audio_encoding', 'n/a')}"
+        )
+        return result
+
     # Decide whether to use chunking or single request
     if not FLOW_CHUNK_MODE and estimated_base64_mb <= FLOW_MAX_BASE64_MB and audio_duration <= 60:
         # Single request for short audio (no chunking mode, under limits)
-        audio_base64, audio_encoding = _encode_audio_for_flow(file_path, content_type)
-        return _flow_transcribe_base64(session, audio_base64, audio_encoding)
+        encode_start = time.perf_counter()
+        audio_base64, audio_encoding = _encode_audio_data_for_flow(processed)
+        timings["encode_ms"] = _trace_duration(
+            "flow_api_encode",
+            encode_start,
+            encoding=audio_encoding,
+            audio_seconds=audio_duration,
+            samples=len(processed),
+        )
+        result = _flow_transcribe_base64(session, audio_base64, audio_encoding)
+        return _finalize_result(result, "single", 1, audio_encoding)
 
     # Use parallel chunking for long audio or when chunk mode is enabled
+    split_start = time.perf_counter()
     chunks = _split_audio_chunks(processed, FLOW_CHUNK_SECONDS, FLOW_CHUNK_OVERLAP)
+    timings["chunk_split_ms"] = _trace_duration(
+        "flow_api_split_chunks",
+        split_start,
+        chunk_count=len(chunks),
+        audio_seconds=audio_duration,
+    )
 
     if len(chunks) == 1:
         # Single chunk - no need for parallel processing
-        audio_base64, audio_encoding = _encode_audio_for_flow(file_path, content_type)
-        return _flow_transcribe_base64(session, audio_base64, audio_encoding)
+        encode_start = time.perf_counter()
+        audio_base64, audio_encoding = _encode_audio_data_for_flow(chunks[0])
+        timings["encode_ms"] = _trace_duration(
+            "flow_api_encode",
+            encode_start,
+            encoding=audio_encoding,
+            audio_seconds=audio_duration,
+            samples=len(chunks[0]),
+        )
+        result = _flow_transcribe_base64(session, audio_base64, audio_encoding)
+        return _finalize_result(result, "single_chunk", 1, audio_encoding)
 
     logger.info(
         f"Using parallel chunking: {len(chunks)} chunks, "
@@ -1341,9 +1869,15 @@ async def _flow_transcribe_file_api(session, file_path: str, content_type: Optio
             session.text = f"Processing: {progress.current_chunk}/{progress.total_chunks} chunks ({progress.percent_complete:.0f}%)"
             session.last_active = time.time()
 
+        chunk_start = time.perf_counter()
         # Run parallel transcription (await since we're already in async context)
         result = await _flow_transcribe_chunks_parallel(
             chunks, session, concurrent_limit=3, progress_callback=progress_callback
+        )
+        timings["chunk_transcribe_ms"] = _trace_duration(
+            "flow_api_chunk_transcribe",
+            chunk_start,
+            chunk_count=len(chunks),
         )
 
         if result.get("success"):
@@ -1353,10 +1887,11 @@ async def _flow_transcribe_file_api(session, file_path: str, content_type: Optio
             if result.get("warning"):
                 logger.warning(f"Transcription completed with warning: {result.get('warning')}")
 
-        return result
+        return _finalize_result(result, "chunk_parallel", len(chunks))
     else:
         # Sequential processing (fallback)
         merged_text = ""
+        chunk_start = time.perf_counter()
         for idx, chunk in enumerate(chunks):
             audio_base64 = None
             audio_encoding = "wav"
@@ -1382,8 +1917,13 @@ async def _flow_transcribe_file_api(session, file_path: str, content_type: Optio
                 session.status = "processing"
                 session.last_active = time.time()
             else:
-                return result
-        return {"success": True, "text": merged_text}
+                return _finalize_result(result, "chunk_sequential", len(chunks), audio_encoding)
+        timings["chunk_transcribe_ms"] = _trace_duration(
+            "flow_api_chunk_transcribe",
+            chunk_start,
+            chunk_count=len(chunks),
+        )
+        return _finalize_result({"success": True, "text": merged_text}, "chunk_sequential", len(chunks))
 
 # ============================================================================
 # TRANSCRIPTION SESSION
@@ -1402,26 +1942,26 @@ class TranscriptionSession:
         self.text = ""
         self.worker_thread = None
         self.status = "created"
-        
+
         self.accumulated_audio = []
         self.accumulated_duration = 0.0
-        
+
         # Session continuity for Wispr Flow (prev_asr_text)
         self.cumulative_text = ""  # Accumulates all transcribed text for context
-        
+
         # Perplexity-recommended settings for optimal transcription
         self.min_chunk_size = 1.0  # Process every 1 second (best quality-latency tradeoff)
         self.buffer_trim_threshold = float('inf')  # No buffer trimming - process entire file
         self.max_buffer_duration = float('inf')  # No duration limit - process entire file
-        
+
         # For WebSocket streaming
         self.max_transcription_wait = 3600.0  # 1 hour for streaming
         self.transcription_start_time = None
-        
+
         # Audio buffer and history
         self.audio_history = np.array([], dtype=np.float32)
         self.history_duration = 0.0
-        
+
         # Transcription state
         self.last_transcription = ""
         self.confirmed_text = ""  # Confirmed stable text
@@ -1430,6 +1970,17 @@ class TranscriptionSession:
         self.transcription_history = []
         self.max_history_segments = 5
         self.last_segment_ids = []
+
+        # Queue monitoring statistics
+        self.queue_stats = {
+            "puts": 0,
+            "gets": 0,
+            "blocks": 0,
+            "full_drops": 0,
+            "audio_drops": 0,
+            "max_depth": 0,
+            "blocked_time_ms": [],
+        }
     
     def start(self, model):
         """Start the transcription worker thread."""
@@ -1478,6 +2029,8 @@ class TranscriptionSession:
     def _process_accumulated_audio(self, model, audio_data):
         """Helper method to process accumulated audio data with Perplexity best practices."""
         try:
+            process_start = time.perf_counter()
+            timings: Dict[str, float] = {}
             # Add to audio history and trim if needed
             self.audio_history = np.concatenate([self.audio_history, audio_data])
             self.history_duration = len(self.audio_history) / 16000.0
@@ -1520,6 +2073,7 @@ class TranscriptionSession:
                 enhanced_prompt = self._get_context_prompt()
                 logger.info(f"Session {self.session_id}: Vocabulary manager not available, using context prompt")
             
+            transcribe_start = time.perf_counter()
             segments_generator, info = model.transcribe(
                 audio_to_transcribe,
                 language=self.language,
@@ -1532,12 +2086,14 @@ class TranscriptionSession:
             )
             
             segments = list(segments_generator)
+            timings["transcribe_ms"] = (time.perf_counter() - transcribe_start) * 1000
             logger.info(f"Session {self.session_id}: Transcribed {len(segments)} segments")
             
             # Detect hallucinations (repetitive loops from long prompts)
             if self._is_hallucinated(segments):
                 logger.warning(f"Session {self.session_id}: Hallucination detected, retrying without prompt")
                 # Retry without prompt
+                retry_start = time.perf_counter()
                 segments_generator, info = model.transcribe(
                     audio_to_transcribe,
                     language=self.language,
@@ -1547,15 +2103,18 @@ class TranscriptionSession:
                     beam_size=5
                 )
                 segments = list(segments_generator)
+                timings["retry_ms"] = (time.perf_counter() - retry_start) * 1000
                 logger.info(f"Session {self.session_id}: Retry completed with {len(segments)} segments")
             
             # Log each segment for debugging
             for i, seg in enumerate(segments):
                 logger.debug(f"Session {self.session_id}: Segment {i}: '{seg.text}' (repr: {repr(seg.text)})")
             
+            post_start = time.perf_counter()
             # Join segments and filter hallucinations
             raw_text = " ".join([seg.text.strip() for seg in segments if seg.text.strip()])
             new_text = filter_hallucinations(raw_text)
+            timings["post_ms"] = (time.perf_counter() - post_start) * 1000
             
             logger.debug(f"Session {self.session_id}: Raw text: {repr(raw_text)}")
             
@@ -1568,9 +2127,16 @@ class TranscriptionSession:
                 if tcpgen_info['corrections']:
                     logger.info(
                         f"Session {self.session_id}: ✨ TCPGen corrected {tcpgen_info['correction_count']} words: "
-                        f"'{new_text[:80]}...' -> '{tcpgen_text[:80]}...'" if len(new_text) > 80 
+                        f"'{new_text[:80]}...' -> '{tcpgen_text[:80]}...'" if len(new_text) > 80
                         else f"Session {self.session_id}: ✨ TCPGen: '{new_text}' -> '{tcpgen_text}'"
                     )
+                    # Enhanced TCPGen timing breakdown when trace is enabled
+                    if HYPR_VOICE_TRACE_TCPGEN:
+                        logger.info(
+                            f"   📊 TCPGen breakdown: {tcpgen_info['total_ms']:.1f}ms "
+                            f"(preprocessing={tcpgen_info.get('preprocessing_ms', 0):.1f}ms, "
+                            f"matching={tcpgen_info.get('matching_ms', 0):.1f}ms)"
+                        )
                     # Log specific corrections
                     for corr in tcpgen_info['corrections'][:3]:  # Show first 3
                         logger.debug(f"   • '{corr['original']}' → '{corr['corrected']}'")
@@ -1607,6 +2173,43 @@ class TranscriptionSession:
             elif not new_text:
                 logger.debug(f"Session {self.session_id}: No text from transcription")
             
+            timings["total_ms"] = (time.perf_counter() - process_start) * 1000
+
+            # Add queue statistics to timing if tracing is enabled
+            queue_stats_str = ""
+            if HYPR_VOICE_TRACE_QUEUE and self.queue_stats["puts"] > 0:
+                blocked_times = self.queue_stats.get("blocked_time_ms", [])
+                avg_blocked = sum(blocked_times) / len(blocked_times) if blocked_times else 0
+                queue_stats_str = (
+                    f" queue_puts={self.queue_stats['puts']}"
+                    f" max_depth={self.queue_stats['max_depth']}"
+                    f" blocks={self.queue_stats['blocks']}"
+                    f" avg_blocked={avg_blocked:.1f}ms"
+                )
+
+            # Get window backend cache stats if available
+            cache_stats_str = ""
+            if _window_backend_cache_stats_enabled and get_cache_stats:
+                try:
+                    cache_stats = get_cache_stats()
+                    if cache_stats.get('reads', 0) > 0:
+                        hit_rate = cache_stats.get('hits', 0) / cache_stats['reads'] * 100
+                        cache_stats_str = (
+                            f" cache_hits={cache_stats.get('hits', 0)}"
+                            f" cache_misses={cache_stats.get('misses', 0)}"
+                            f" cache_hit_rate={hit_rate:.0f}%"
+                        )
+                except Exception as e:
+                    logger.debug(f"Failed to get cache stats: {e}")
+
+            logger.info(
+                f"Session {self.session_id}: Local pipeline timing total={timings['total_ms']:.1f}ms "
+                f"transcribe={timings.get('transcribe_ms', 0):.1f}ms "
+                f"retry={timings.get('retry_ms', 0):.1f}ms "
+                f"post={timings.get('post_ms', 0):.1f}ms "
+                f"audio={len(audio_to_transcribe)/16000:.2f}s segments={len(segments)}"
+                f"{queue_stats_str}{cache_stats_str}"
+            )
         except Exception as e:
             logger.error(f"Session {self.session_id}: Error processing audio: {e}")
         
@@ -1616,20 +2219,33 @@ class TranscriptionSession:
     
     def add_audio(self, audio_data, sample_rate):
         """Add audio data to the session queue."""
+        put_start = time.perf_counter()
+        self.queue_stats["puts"] += 1
+        current_depth = self.audio_queue.qsize()
+        if current_depth > self.queue_stats["max_depth"]:
+            self.queue_stats["max_depth"] = current_depth
+
         try:
             processed_audio = preprocess_audio(audio_data, sample_rate)
-            
+
             try:
                 self.audio_queue.put(processed_audio, block=True, timeout=0.1)
             except queue.Full:
+                self.queue_stats["blocks"] += 1
+                blocked_ms = (time.perf_counter() - put_start) * 1000
+                self.queue_stats["blocked_time_ms"].append(blocked_ms)
                 try:
                     self.audio_queue.get_nowait()
                     self.audio_queue.put(processed_audio, block=False)
+                    self.queue_stats["full_drops"] += 1
                     logger.warning(f"Session {self.session_id}: Queue full, dropping oldest")
+                    _trace_duration("audio_queue_put_full", put_start, dropped="oldest", depth=current_depth)
                 except (queue.Empty, queue.Full):
+                    self.queue_stats["audio_drops"] += 1
                     logger.warning(f"Session {self.session_id}: Queue full, dropping audio")
+                    _trace_duration("audio_queue_put_full", put_start, dropped="current", depth=current_depth)
                     return False
-            
+
             self.last_active = time.time()
             return True
         except Exception as e:
@@ -1668,7 +2284,13 @@ class TranscriptionSession:
                     break
                 
                 try:
+                    get_start = time.perf_counter()
                     audio_chunk = self.audio_queue.get(timeout=0.5)
+                    self.queue_stats["gets"] += 1
+                    get_ms = (time.perf_counter() - get_start) * 1000
+                    current_depth = self.audio_queue.qsize()
+                    if TRACE_ENABLED and get_ms > 10:
+                        logger.debug(f"Session {self.session_id}: Queue get took {get_ms:.1f}ms, depth={current_depth}")
                     last_activity_time = time.time()
                 except queue.Empty:
                     if (self.accumulated_audio and len(self.accumulated_audio) > 0 and 
@@ -1726,6 +2348,17 @@ class TranscriptionSession:
         
         self.status = "completed"
         logger.info(f"Transcription worker for session {self.session_id} finished")
+        # Log queue statistics if tracing is enabled
+        if TRACE_ENABLED and self.queue_stats["puts"] > 0:
+            blocked_times = self.queue_stats.get("blocked_time_ms", [])
+            avg_blocked = sum(blocked_times) / len(blocked_times) if blocked_times else 0
+            logger.info(
+                f"Session {self.session_id}: Queue stats - "
+                f"puts={self.queue_stats['puts']} gets={self.queue_stats['gets']} "
+                f"blocks={self.queue_stats['blocks']} "
+                f"full_drops={self.queue_stats['full_drops']} audio_drops={self.queue_stats['audio_drops']} "
+                f"max_depth={self.queue_stats['max_depth']} avg_blocked={avg_blocked:.1f}ms"
+            )
 
 # ============================================================================
 # BACKGROUND TASKS
@@ -1754,12 +2387,20 @@ async def process_and_transcribe_task_flow(session, file_path, content_type):
 def process_and_transcribe_task(session, file_path, content_type):
     """Background task to process file and add to transcription queue."""
     try:
+        load_start = time.perf_counter()
         if "video" in content_type or content_type in ["application/octet-stream", "video/mp4", "video/x-matroska"]:
             logger.info(f"[{session.session_id}] Processing video file...")
             audio_data, sample_rate = process_video_to_audio(file_path)
         else:
             logger.info(f"[{session.session_id}] Processing audio file...")
             audio_data, sample_rate = sf.read(file_path)
+        load_ms = _trace_duration(
+            "background_file_load",
+            load_start,
+            file=os.path.basename(file_path),
+            content_type=content_type,
+        )
+        logger.info(f"[{session.session_id}] File loaded in {load_ms:.1f}ms")
         
         logger.info(f"[{session.session_id}] Adding audio to session queue.")
         session.add_audio(audio_data, sample_rate)

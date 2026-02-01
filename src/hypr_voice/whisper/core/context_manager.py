@@ -5,6 +5,7 @@ Gathers contextual information from shell history and clipboard.
 """
 
 import subprocess
+import os
 import logging
 import re
 import time
@@ -12,6 +13,8 @@ from pathlib import Path
 from typing import List, Dict, Set
 
 logger = logging.getLogger(__name__)
+TRACE_ENABLED = os.getenv("HYPR_VOICE_TRACE", "0") == "1"
+TRACE_SLOW_MS = float(os.getenv("HYPR_VOICE_TRACE_SLOW_MS", "0"))
 
 class ContextManager:
     """Manages context gathering from various sources."""
@@ -80,8 +83,12 @@ class ContextManager:
         
         try:
             # For Wayland/Hyprland, use cliphist if available
+            start_time = time.perf_counter()
             result = subprocess.run(['cliphist', 'list'],
                                   capture_output=True, text=True, timeout=2)
+            elapsed_ms = (time.perf_counter() - start_time) * 1000
+            if TRACE_ENABLED or (TRACE_SLOW_MS > 0 and elapsed_ms >= TRACE_SLOW_MS):
+                logger.info("[TRACE] cliphist rc=%s %.1fms", result.returncode, elapsed_ms)
             if result.returncode == 0:
                 lines = result.stdout.strip().split('\n')[:count]
                 for line in lines:
@@ -98,8 +105,12 @@ class ContextManager:
         # Fallback: current clipboard only
         if not entries:
             try:
+                start_time = time.perf_counter()
                 result = subprocess.run(['wl-paste'], 
                                       capture_output=True, text=True, timeout=1)
+                elapsed_ms = (time.perf_counter() - start_time) * 1000
+                if TRACE_ENABLED or (TRACE_SLOW_MS > 0 and elapsed_ms >= TRACE_SLOW_MS):
+                    logger.info("[TRACE] wl-paste rc=%s %.1fms", result.returncode, elapsed_ms)
                 if result.returncode == 0:
                     entry = result.stdout.strip()
                     if entry:

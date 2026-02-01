@@ -2,13 +2,29 @@
 .venv/
 **/.venv/
 venv/
+env/
+ENV/
+env.bak/
+venv.bak/
 
 # IDE and Editor files
 .idea/
+**/.idea/
 .cursor/
 .windsurf/
 .aider/
 .vscode/
+*.sublime-project
+*.sublime-workspace
+*.code-workspace
+.project
+.classpath
+.settings/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 
 # Environment files (may contain secrets)
 .env
@@ -21,10 +37,23 @@ __pycache__/
 **/__pycache__/
 *.pyc
 *.pyo
+*.pyd
 .Python
 build/
 dist/
 *.egg-info/
+*.egg
+pip-wheel-metadata/
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+cython_debug/
 
 # Testing and coverage
 .coverage
@@ -105,15 +134,36 @@ coordination/memory_bank/*
 coordination/subtasks/*
 coordination/orchestration/*
 
-# Node modules and large build files
-web-ui/node_modules/
+# Node.js / npm / yarn
+node_modules/
 **/node_modules/
-web-ui/dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.yarn-integrity
+.npm
+package-lock.json.bak
+yarn.lock.bak
+
+# Build outputs
+dist/
 **/dist/
-web-ui/build/
+build/
 **/build/
-web-ui/.next/
+.next/
 **/.next/
+out/
+**/out/
+.nuxt/
+**/.nuxt/
+.vuepress/dist
+.vuepress/dist/
+.docusaurus/
+.serverless/
+.fusebox/
+.dynamodb/
+.tern-port
 
 # Large log files
 logs/**/*.json
@@ -134,20 +184,87 @@ src/api/logs/**/*.json
 *.so
 *.dylib
 
-
 # Removed Windows wrapper files per user request
 hive-mind-prompt-*.txt
 old_files/
+
+# Local environment overrides
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# Docker
+.dockerignore
+Dockerfile.*
+docker-compose.*.yml
+docker-compose.*.yaml
+.docker/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+
+# Coverage reports
+coverage/
+**/coverage/
+.nyc_output/
+
+# TypeScript
+*.tsbuildinfo
+.tscache/
+
+# Storybook
+storybook-static/
+
+# PWA
+**/public/sw.js
+**/public/workbox-*.js
+**/public/worker-*.js
+**/public/sw.js.map
+**/public/workbox-*.js.map
+**/public/worker-*.js.map
+
+# Runtime data directories (untracked from Git)
+runtime/
+**/runtime/
+logs/
+**/logs/
+audio_output/
+**/audio_output/
+var/
+**/var/
+*.pid
+*.sock
+*.socket
+lock/
+locks/
+tmp/
+temp/
+cache/
+**/cache/
+
+# Databases (already excluded above)
+.swarm/
+.hive-mind/
+
+# External references
+Ref-github-outsource/
+
+# Agent coordination (may be used by external tools)
+memory/
+coordination/
 
 # Claude Flow generated files
 .claude/settings.local.json
 .mcp.json
 claude-flow.config.json
-.swarm/
-.hive-mind/
 .claude-flow/
-memory/
-coordination/
 memory/claude-flow-data.json
 memory/sessions/*
 !memory/sessions/README.md
@@ -156,12 +273,7 @@ memory/agents/*
 coordination/memory_bank/*
 coordination/subtasks/*
 coordination/orchestration/*
-*.db
-*.db-journal
-*.db-wal
-*.sqlite
-*.sqlite-journal
-*.sqlite-wal
 claude-flow
+
 # Removed Windows wrapper files per user request
 hive-mind-prompt-*.txt

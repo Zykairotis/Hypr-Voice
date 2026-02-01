@@ -5,13 +5,14 @@ Handles custom vocabulary enhancement for different applications.
 """
 
 import os
+import time
 import yaml
 import json
 import re
 import asyncio
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple, Any
 from difflib import SequenceMatcher
 from dataclasses import dataclass
 from loguru import logger
@@ -20,6 +21,23 @@ from loguru import logger
 from ..backends.window_backends import detect_backend
 from ..hooks.hook_bus import emit
 from ..paths import get_whisper_config_dir
+
+# Trace configuration (sync with hybrid_server)
+TRACE_ENABLED = os.getenv("HYPR_VOICE_TRACE", "0") == "1"
+TRACE_SLOW_MS = float(os.getenv("HYPR_VOICE_TRACE_SLOW_MS", "0"))
+
+
+def _trace_duration(label: str, start_time: float, **fields) -> float:
+    """Log timing for a span if tracing is enabled or exceeds slow threshold."""
+    elapsed_ms = (time.perf_counter() - start_time) * 1000
+    should_log = TRACE_ENABLED or (TRACE_SLOW_MS > 0 and elapsed_ms >= TRACE_SLOW_MS)
+    if should_log:
+        field_str = " ".join(f"{k}={v}" for k, v in fields.items() if v is not None)
+        if field_str:
+            logger.info(f"[TRACE] {label} {elapsed_ms:.1f}ms {field_str}")
+        else:
+            logger.info(f"[TRACE] {label} {elapsed_ms:.1f}ms")
+    return elapsed_ms
 
 # Import ContextManager (basic)
 try:
@@ -73,6 +91,10 @@ class VocabularyManager:
         self.current_backend: Optional[str] = None
         self.active_keywords: Set[str] = set()
 
+        # Cache for prioritized keywords (invalidated on vocabulary change)
+        self._prioritized_cache: Optional[List[str]] = None
+        self._prioritized_cache_key: Optional[str] = None  # vocabulary_name + active_keywords hash
+
         # Check if enhanced system should be used
         use_enhanced = os.environ.get('HYPR_VOICE_ENHANCED_CONTEXT', '').lower() in ('true', '1', 'yes')
 
@@ -115,6 +137,7 @@ class VocabularyManager:
 
     def load_configurations(self):
         """Load vocabulary configurations from files."""
+        load_start = time.perf_counter()
         # Load main vocabulary config
         main_config = self.config_dir / "vocabulary.yaml"
         if main_config.exists():
@@ -126,6 +149,7 @@ class VocabularyManager:
 
         # Load application-specific vocabularies
         vocab_dir = self.config_dir / "vocabularies"
+        loaded_count = 0
         if vocab_dir.exists():
             for vocab_file in vocab_dir.glob("*.yaml"):
                 try:
@@ -142,6 +166,7 @@ class VocabularyManager:
                     )
 
                     self.vocabularies[vocab_file.stem] = vocab_config
+                    loaded_count += 1
                     logger.info(f"Loaded vocabulary: {vocab_config.name}")
 
                 except Exception as e:
@@ -161,14 +186,21 @@ class VocabularyManager:
 
         # Load backend overlays (optional)
         overlays_file = self.config_dir / "backend_overlays.yaml"
+        overlays_loaded = False
         if overlays_file.exists():
             try:
                 with open(overlays_file, 'r') as f:
                     data = yaml.safe_load(f) or {}
                 self.backend_overlays = data.get('backends', {}) or {}
+                overlays_loaded = True
                 logger.info(f"Loaded backend overlays for {len(self.backend_overlays)} backends")
             except Exception as e:
                 logger.error(f"Error loading backend overlays: {e}")
+
+        _trace_duration("vocab_load_configurations", load_start,
+                       vocabularies=loaded_count,
+                       has_overlay=overlays_loaded,
+                       has_global=bool('global' in self.main_config))
 
     def detect_active_application(self) -> Optional[str]:
         """
@@ -236,6 +268,7 @@ class VocabularyManager:
             app_title: Optional application title
             backend: Optional backend name (hyprland/gnome/kde/sway/x11/manual)
         """
+        update_start = time.perf_counter()
         if app_name is None:
             app_name = self.detect_active_application()
 
@@ -263,11 +296,22 @@ class VocabularyManager:
             vocab_name = 'global'
 
         # Update if vocabulary changed
-        if self.current_vocabulary != vocab_name or backend:
+        keywords_count = 0
+        vocab_changed = self.current_vocabulary != vocab_name or backend
+        if vocab_changed:
             self.current_vocabulary = vocab_name
             self.active_keywords = self._get_active_keywords(vocab_name)
+            keywords_count = len(self.active_keywords)
+            # Invalidate prioritized keywords cache
+            self._prioritized_cache = None
+            self._prioritized_cache_key = None
             logger.info(f"Switched to vocabulary: {vocab_name} (app: {app_name}, backend: {self.current_backend})")
             emit('vocab_change', vocab_name=vocab_name, app_name=app_name, backend_name=self.current_backend)
+
+        _trace_duration("vocab_update", update_start,
+                       vocab_name=vocab_name,
+                       keywords=keywords_count,
+                       changed=vocab_changed)
 
     def _get_active_keywords(self, vocab_name: str) -> Set[str]:
         """
@@ -404,7 +448,10 @@ class VocabularyManager:
         Returns:
             Context-aware prompt string
         """
+        start = time.perf_counter()
         prompt_words = []
+        recent_context_count = 0
+        vocab_added_count = 0
         
         # PART 1: Recent context (for coherence and unknown words)
         if previous_text:
@@ -422,8 +469,10 @@ class VocabularyManager:
             # Take last 5-8 significant words for immediate context
             recent_context = significant[-8:] if len(significant) >= 8 else significant[-5:]
             prompt_words.extend(recent_context)
+            recent_context_count = len(recent_context)
         
         # PART 2: Custom vocabulary (if enabled and available)
+        vocab_to_add = []
         if include_vocabulary and self.active_keywords:
             # Prioritize vocabulary by:
             # 1. Length (longer = more specific)
@@ -433,11 +482,12 @@ class VocabularyManager:
                 key=lambda x: (len(x), x.lower()),
                 reverse=True
             )
-            
+
             # Add vocabulary terms until we hit max_words
             remaining_slots = max_words - len(prompt_words)
             vocab_to_add = vocab_sorted[:remaining_slots]
             prompt_words.extend(vocab_to_add)
+            vocab_added_count = len(vocab_to_add)
         
         # Remove duplicates while preserving order
         seen = set()
@@ -455,29 +505,43 @@ class VocabularyManager:
         if prompt:
             prompt += "."
         
+        _trace_duration("vocab_get_contextual_prompt", start,
+                       total_words=len(unique_words),
+                       recent_context=recent_context_count,
+                       vocab_added=vocab_added_count,
+                       chars=len(prompt))
+
         logger.debug(
             f"Contextual prompt: {len(unique_words)} words, "
             f"{len(prompt)} chars ({len(prompt)//4} tokens approx), "
-            f"context={len(recent_context if previous_text else [])} vocab={len(vocab_to_add) if include_vocabulary else 0}"
+            f"context={recent_context_count} vocab={vocab_added_count}"
         )
-        
+
         return prompt
     
     def _prioritize_keywords(self) -> List[str]:
         """
         Prioritize keywords by importance.
         Order: Application-specific > Context (shell/clipboard) > Global
-        
+
         Returns:
             List of prioritized unique keywords
         """
+        # Build cache key from current vocabulary and active keywords
+        cache_key = f"{self.current_vocabulary}:{len(self.active_keywords)}"
+
+        # Return cached result if available and valid
+        if self._prioritized_cache is not None and self._prioritized_cache_key == cache_key:
+            logger.debug(f"Using cached prioritized keywords ({len(self._prioritized_cache)} terms)")
+            return self._prioritized_cache
+
         prioritized = []
-        
+
         # 1. Application-specific vocabulary (highest priority)
         if self.current_vocabulary and self.current_vocabulary != 'global':
             app_keywords = self._get_app_specific_keywords()
             prioritized.extend(app_keywords[:20])  # Top 20 app terms
-        
+
         # 2. Context keywords (shell history, clipboard)
         if self.context_manager:
             try:
@@ -495,11 +559,11 @@ class VocabularyManager:
                     prioritized.extend(list(context_keywords)[:15])  # Top 15 context terms
             except Exception as e:
                 logger.debug(f"Error getting context keywords: {e}")
-        
+
         # 3. Global technical terms (lower priority)
         global_keywords = self._get_global_keywords()
         prioritized.extend(global_keywords[:15])  # Top 15 global terms
-        
+
         # Remove duplicates while preserving order
         seen = set()
         unique = []
@@ -507,7 +571,11 @@ class VocabularyManager:
             if kw not in seen:
                 seen.add(kw)
                 unique.append(kw)
-        
+
+        # Update cache
+        self._prioritized_cache = unique
+        self._prioritized_cache_key = cache_key
+
         return unique
     
     def _get_app_specific_keywords(self) -> List[str]:

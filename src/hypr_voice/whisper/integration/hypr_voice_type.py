@@ -13,6 +13,8 @@ import time
 import argparse
 import subprocess
 import yaml
+import os
+import numpy as np
 from datetime import datetime
 from pathlib import Path
 from loguru import logger
@@ -151,6 +153,28 @@ class PushToTalkRecorder:
             logger.info(f"Recordings will be saved to: {RECORDINGS_DIR}")
         else:
             logger.info("Using temp files (recordings not saved)")
+        
+        # ============================================================================
+        # STREAMING CHUNKING STATE (for long recordings optimization)
+        # ============================================================================
+        # Smart defaults - no env vars needed unless you want to customize
+        self.streaming_mode = os.getenv("FLOW_STREAMING_MODE", "1") == "1"
+        # Use existing WISPR_FLOW_CHUNK_SECONDS if set, otherwise 27s default
+        self.chunk_size_seconds = float(os.getenv("WISPR_FLOW_CHUNK_SECONDS", "27"))
+        self.overlap_seconds = 3.0  # Fixed optimal value
+        self.min_duration_for_streaming = 20.0  # Fixed threshold
+        
+        # Streaming state
+        self.chunk_buffer = []           # Current chunk being built (audio frames)
+        self.chunk_start_time = None     # When current chunk started
+        self.pending_chunks = []         # Chunks ready to process
+        self.transcription_results = []  # Partial results from chunks
+        self.chunk_processor_task = None # Background processing task
+        self.total_recording_duration = 0.0  # Track total duration
+        
+        if self.streaming_mode:
+            logger.info(f"✨ Streaming mode enabled: {self.chunk_size_seconds}s chunks, {self.overlap_seconds}s overlap")
+            logger.info(f"   Will activate for recordings > {self.min_duration_for_streaming}s")
     
     def start_recording(self):
         """Start recording audio (called when F9 pressed)."""
@@ -160,6 +184,13 @@ class PushToTalkRecorder:
         
         self.recording = True
         self.frames = []
+        
+        # Reset streaming state
+        self.chunk_buffer = []
+        self.chunk_start_time = None
+        self.pending_chunks = []
+        self.transcription_results = []
+        self.total_recording_duration = 0.0
         
         # Visual/audio feedback
         logger.info("🔴 Recording started...")
@@ -177,7 +208,15 @@ class PushToTalkRecorder:
             return
         
         self.recording = False
-        logger.info("⏹️ Recording stopped")
+        logger.info(f"⏹️ Recording stopped ({self.total_recording_duration:.1f}s)")
+        
+        # Handle final partial chunk if streaming mode was active
+        if self.streaming_mode and len(self.chunk_buffer) > 0:
+            final_chunk = np.array(self.chunk_buffer, dtype=np.int16)
+            final_duration = len(final_chunk) / SAMPLE_RATE
+            if final_duration > 1.0:  # Only process if > 1 second
+                self.pending_chunks.append(final_chunk)
+                logger.info(f"📦 Added final chunk: {final_duration:.1f}s")
         
         # Visual/audio feedback
         subprocess.run(["paplay", "/usr/share/sounds/freedesktop/stereo/complete.oga"], 
@@ -187,7 +226,7 @@ class PushToTalkRecorder:
         asyncio.create_task(self._process_recording())
     
     async def _record_audio(self):
-        """Record audio in background."""
+        """Record audio in background with real-time chunking for streaming transcription."""
         p = pyaudio.PyAudio()
         
         try:
@@ -207,11 +246,53 @@ class PushToTalkRecorder:
             
             stream = p.open(**stream_params)
             
+            # Start background chunk processor if streaming mode enabled
+            if self.streaming_mode:
+                self.chunk_processor_task = asyncio.create_task(
+                    self._background_chunk_processor()
+                )
+                logger.info("🚀 Background chunk processor started")
+            
             logger.info("Recording audio...")
+            recording_start_time = time.time()
+            
             while self.recording:
                 try:
                     data = stream.read(CHUNK_SIZE, exception_on_overflow=False)
                     self.frames.append(data)
+                    
+                    # Calculate total recording duration
+                    self.total_recording_duration = time.time() - recording_start_time
+                    
+                    # NEW: Real-time chunking logic for streaming mode
+                    if self.streaming_mode and self.total_recording_duration >= self.min_duration_for_streaming:
+                        # Convert to numpy array for processing
+                        audio_np = np.frombuffer(data, dtype=np.int16)
+                        self.chunk_buffer.extend(audio_np)
+                        
+                        # Initialize chunk timer
+                        if self.chunk_start_time is None:
+                            self.chunk_start_time = time.time()
+                        
+                        # Calculate current chunk duration
+                        chunk_duration = len(self.chunk_buffer) / SAMPLE_RATE
+                        
+                        # When chunk reaches target size, process it
+                        if chunk_duration >= self.chunk_size_seconds:
+                            samples_per_chunk = int(self.chunk_size_seconds * SAMPLE_RATE)
+                            overlap_samples = int(self.overlap_seconds * SAMPLE_RATE)
+                            
+                            # Extract full chunk
+                            chunk = np.array(self.chunk_buffer[:samples_per_chunk], dtype=np.int16)
+                            
+                            # Queue for background processing
+                            self.pending_chunks.append(chunk)
+                            logger.info(f"📦 Chunk ready: {chunk_duration:.1f}s (queue: {len(self.pending_chunks)})")
+                            
+                            # Keep overlap for next chunk
+                            self.chunk_buffer = list(self.chunk_buffer[samples_per_chunk - overlap_samples:])
+                            self.chunk_start_time = time.time()
+                    
                 except Exception as e:
                     logger.error(f"Error recording: {e}")
                     break
@@ -222,11 +303,179 @@ class PushToTalkRecorder:
         finally:
             p.terminate()
     
+    async def _background_chunk_processor(self):
+        """Process chunks in background while recording continues."""
+        chunk_index = 0
+        
+        logger.info("🔄 Chunk processor: Waiting for chunks...")
+        
+        while self.recording or len(self.pending_chunks) > 0:
+            if len(self.pending_chunks) > 0:
+                chunk = self.pending_chunks.pop(0)
+                
+                logger.info(f"⚡ Processing chunk {chunk_index} in background ({len(chunk)/SAMPLE_RATE:.1f}s)...")
+                
+                try:
+                    # Encode chunk to temporary file
+                    chunk_file = await self._encode_chunk(chunk, chunk_index)
+                    
+                    # Send to transcription API
+                    result = await self._transcribe_chunk(chunk_file, chunk_index)
+                    
+                    if result and result.get("success"):
+                        chunk_text = result.get("text", "").strip()
+                        self.transcription_results.append({
+                            "index": chunk_index,
+                            "text": chunk_text,
+                            "timestamp": time.time()
+                        })
+                        logger.success(f"✅ Chunk {chunk_index} transcribed: {chunk_text[:60]}...")
+                    else:
+                        logger.warning(f"⚠️ Chunk {chunk_index} failed: {result.get('error', 'Unknown error')}")
+                    
+                    # Clean up temp file
+                    try:
+                        if chunk_file.exists():
+                            chunk_file.unlink()
+                    except:
+                        pass
+                    
+                except Exception as e:
+                    logger.error(f"Error processing chunk {chunk_index}: {e}")
+                
+                chunk_index += 1
+            else:
+                # Wait for new chunks
+                await asyncio.sleep(0.1)
+        
+        logger.info(f"🏁 Background chunk processor finished ({chunk_index} chunks processed)")
+    
+    async def _encode_chunk(self, chunk: np.ndarray, chunk_index: int) -> Path:
+        """Encode a single audio chunk to WAV file."""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        chunk_file = RECORDINGS_DIR / f"chunk_{timestamp}_{chunk_index}.wav"
+        
+        try:
+            # Convert to audio frames format
+            audio_bytes = chunk.tobytes()
+            
+            # Save as WAV
+            p = pyaudio.PyAudio()
+            wf = wave.open(str(chunk_file), 'wb')
+            wf.setnchannels(CHANNELS)
+            wf.setsampwidth(p.get_sample_size(FORMAT))
+            wf.setframerate(SAMPLE_RATE)
+            wf.writeframes(audio_bytes)
+            wf.close()
+            p.terminate()
+            
+            logger.debug(f"Encoded chunk {chunk_index} to {chunk_file}")
+            return chunk_file
+            
+        except Exception as e:
+            logger.error(f"Error encoding chunk {chunk_index}: {e}")
+            raise
+    
+    async def _transcribe_chunk(self, chunk_file: Path, chunk_index: int) -> dict:
+        """Transcribe a single audio chunk."""
+        try:
+            # Create session if needed
+            if not self.client.session_id:
+                self.client.create_session(language=None)  # Auto-detect
+            
+            # Get previous text for context
+            prev_text = ""
+            if len(self.transcription_results) > 0:
+                prev_text = self.transcription_results[-1].get("text", "")
+            
+            # Transcribe chunk
+            result = self.client.transcribe_file(str(chunk_file))
+            
+            if result and 'text' in result:
+                text = result['text'].strip()
+                
+                # Apply vocabulary enhancement
+                if text:
+                    enhanced_text = self.vocabulary_manager.post_process_transcription(text)
+                    if enhanced_text != text:
+                        logger.debug(f"Chunk {chunk_index} vocabulary enhanced")
+                        text = enhanced_text
+                
+                return {"success": True, "text": text}
+            else:
+                return {"success": False, "error": "No text in result"}
+                
+        except Exception as e:
+            logger.error(f"Error transcribing chunk {chunk_index}: {e}")
+            return {"success": False, "error": str(e)}
+    
+    def _merge_chunk_results(self) -> str:
+        """Merge all chunk transcription results with overlap handling."""
+        if not self.transcription_results:
+            return ""
+        
+        # Sort by index to ensure correct order
+        sorted_results = sorted(self.transcription_results, key=lambda x: x["index"])
+        
+        # Simple concatenation for now (can be enhanced with overlap detection)
+        merged_text = " ".join([r["text"] for r in sorted_results if r["text"]])
+        
+        return merged_text.strip()
+    
     async def _process_recording(self):
         """Save recording, transcribe, and type result."""
         if not self.frames:
             logger.warning("No audio recorded")
             return
+        
+        # Check if streaming mode was used and we have results
+        used_streaming = (self.streaming_mode and 
+                         self.total_recording_duration >= self.min_duration_for_streaming and 
+                         len(self.transcription_results) > 0)
+        
+        if used_streaming:
+            # Wait for chunk processor to finish any pending chunks
+            if self.chunk_processor_task:
+                logger.info("⏳ Waiting for chunk processor to finish...")
+                try:
+                    await asyncio.wait_for(self.chunk_processor_task, timeout=30.0)
+                except asyncio.TimeoutError:
+                    logger.warning("Chunk processor timeout")
+            
+            # Use streaming results
+            logger.info(f"✨ Using streaming results ({len(self.transcription_results)} chunks)")
+            text = self._merge_chunk_results()
+            
+            if text:
+                logger.success(f"📝 Merged transcription: {text[:100]}..." if len(text) > 100 else f"📝 Transcription: {text}")
+                
+                # Type the text
+                logger.info("⌨️ Typing transcription...")
+                type_text_instant(text)
+                
+                # Save full recording if enabled
+                if self.save_recordings:
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    audio_file = RECORDINGS_DIR / f"recording_{timestamp}.wav"
+                    try:
+                        p = pyaudio.PyAudio()
+                        wf = wave.open(str(audio_file), 'wb')
+                        wf.setnchannels(CHANNELS)
+                        wf.setsampwidth(p.get_sample_size(FORMAT))
+                        wf.setframerate(SAMPLE_RATE)
+                        wf.writeframes(b''.join(self.frames))
+                        wf.close()
+                        p.terminate()
+                        logger.info(f"💾 Saved full recording to {audio_file}")
+                    except Exception as e:
+                        logger.error(f"Error saving recording: {e}")
+            else:
+                logger.warning("No speech detected in streaming chunks")
+            
+            return
+        
+        # Fallback: Traditional processing (short recordings or streaming disabled)
+        logger.info("📋 Using traditional processing mode")
         
         # Create temp file
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

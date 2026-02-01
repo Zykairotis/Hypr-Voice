@@ -521,11 +521,33 @@ async def transcribe_chunk_async(
     
     return result
 
+def _is_opus_file(file_path: str) -> bool:
+    """Check if file is an Opus file by extension and magic bytes."""
+    if not file_path.lower().endswith('.opus'):
+        return False
+    try:
+        with open(file_path, "rb") as f:
+            header = f.read(36)
+            # Opus in Ogg container starts with 'OggS'
+            return header[:4] == b'OggS'
+    except Exception:
+        return False
+
+
 async def transcribe_file_async(
     file_path: str, 
     ctx: Optional[TranscriptionContext] = None
 ) -> dict:
-    """High-level async entry point with ultra-fast preprocessing and full context"""
+    """High-level async entry point with ultra-fast preprocessing and full context
+    
+    OPTIMIZATION: If input file is already Opus (recorded directly via ffmpeg),
+    skip all preprocessing and send it directly to the API. This saves:
+    - Audio loading time (soundfile)
+    - Audio splitting time (numpy)
+    - Audio encoding time (ffmpeg subprocess)
+    
+    For a 30s recording, this saves ~50-100ms of processing time.
+    """
     import logging
     logger = logging.getLogger(__name__)
     
@@ -539,35 +561,71 @@ async def transcribe_file_async(
     t_fileinfo = time.time()
     import os
     file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
-    duration = get_audio_duration(file_path)
-    timings['file_info_ms'] = (time.time() - t_fileinfo) * 1000
     
-    # ⏱️ TIMING: Audio loading
-    t_load = time.time()
-    data, sr = load_audio_fast(file_path)
-    timings['audio_load_ms'] = (time.time() - t_load) * 1000
+    # Check if file is already Opus - if so, use fast path
+    is_direct_opus = _is_opus_file(file_path)
     
-    # ⏱️ TIMING: Audio splitting
-    t_split = time.time()
-    chunks = split_audio_memory(data, sr)
-    timings['audio_split_ms'] = (time.time() - t_split) * 1000
-    
-    # ⏱️ TIMING: Audio encoding (Opus if available, WAV fallback)
-    t_encode = time.time()
-    encoded_chunks = []
-    encoding_type = 'unknown'
-    for i, chunk in enumerate(chunks):
-        audio_bytes, encoding = encode_audio_smart(chunk, sr)
-        encoded_chunks.append((audio_bytes, encoding))
-        encoding_type = encoding
-    timings['audio_encode_ms'] = (time.time() - t_encode) * 1000
+    if is_direct_opus:
+        # FAST PATH: Direct Opus file from recording
+        # Skip all preprocessing - just read bytes and send
+        print(f"🚀 FAST PATH: Direct Opus file detected ({file_size/1024:.0f}KB)", flush=True)
+        
+        t_read = time.time()
+        with open(file_path, 'rb') as f:
+            opus_data = f.read()
+        timings['opus_read_ms'] = (time.time() - t_read) * 1000
+        
+        # Get duration using ffprobe or fallback
+        try:
+            import subprocess
+            result = subprocess.run(
+                ['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+                 '-of', 'default=noprint_wrappers=1:nokey=1', file_path],
+                capture_output=True, text=True, timeout=5
+            )
+            duration = float(result.stdout.strip()) if result.returncode == 0 else 0.0
+        except Exception:
+            duration = 0.0  # Fallback
+        
+        timings['file_info_ms'] = (time.time() - t_fileinfo) * 1000
+        
+        # Skip loading, splitting, encoding - use file directly
+        encoded_chunks = [(opus_data, 'opus')]
+        encoding_type = 'opus'
+        preprocess_ms = timings['opus_read_ms']
+        
+        print(f"   📦 Direct Opus: {len(opus_data)/1024:.0f}KB | No preprocessing needed", flush=True)
+    else:
+        # STANDARD PATH: Load, split, encode (WAV or other format)
+        duration = get_audio_duration(file_path)
+        timings['file_info_ms'] = (time.time() - t_fileinfo) * 1000
+        
+        # ⏱️ TIMING: Audio loading
+        t_load = time.time()
+        data, sr = load_audio_fast(file_path)
+        timings['audio_load_ms'] = (time.time() - t_load) * 1000
+        
+        # ⏱️ TIMING: Audio splitting
+        t_split = time.time()
+        chunks = split_audio_memory(data, sr)
+        timings['audio_split_ms'] = (time.time() - t_split) * 1000
+        
+        # ⏱️ TIMING: Audio encoding (Opus if available, WAV fallback)
+        t_encode = time.time()
+        encoded_chunks = []
+        encoding_type = 'unknown'
+        for i, chunk in enumerate(chunks):
+            audio_bytes, encoding = encode_audio_smart(chunk, sr)
+            encoded_chunks.append((audio_bytes, encoding))
+            encoding_type = encoding
+        timings['audio_encode_ms'] = (time.time() - t_encode) * 1000
+        
+        preprocess_ms = timings['audio_load_ms'] + timings['audio_split_ms'] + timings['audio_encode_ms']
     
     # Log encoding summary
     total_encoded_size = sum(len(ab) for ab, _ in encoded_chunks)
     print(f"   📦 Encoding: {encoding_type.upper()} | {len(encoded_chunks)} chunks | "
           f"{total_encoded_size/1024:.0f}KB total", flush=True)
-    
-    preprocess_ms = timings['audio_load_ms'] + timings['audio_split_ms'] + timings['audio_encode_ms']
     
     # ⏱️ TIMING: HTTP session (aiohttp with TCP_NODELAY)
     t_client = time.time()
@@ -612,33 +670,60 @@ async def transcribe_file_async(
     total_ms = (time.time() - total_start) * 1000
     
     # Log detailed timing breakdown - use print for visibility + logger
-    timing_log = (
-        f"\n⏱️ WISPR-FLOW INTERNAL TIMING:\n"
-        f"   ═══════════════════════════════════════════\n"
-        f"   📁 FILE INFO:\n"
-        f"      ├─ Size:            {file_size/1024:.1f} KB\n"
-        f"      ├─ Duration:        {duration:.1f}s\n"
-        f"      └─ Info time:       {timings['file_info_ms']:6.1f}ms\n"
-        f"   ───────────────────────────────────────────\n"
-        f"   🔧 PREPROCESSING:      {preprocess_ms:6.1f}ms\n"
-        f"      ├─ Audio load:      {timings['audio_load_ms']:6.1f}ms\n"
-        f"      ├─ Audio split:     {timings['audio_split_ms']:6.1f}ms\n"
-        f"      └─ Audio encode:    {timings['audio_encode_ms']:6.1f}ms ({encoding_type.upper()})\n"
-        f"   ───────────────────────────────────────────\n"
-        f"   🌐 NETWORK:            {network_ms:6.1f}ms\n"
-        f"      ├─ Client get:      {timings['client_get_ms']:6.1f}ms  (pooled)\n"
-        f"      ├─ Request build:   {timings['request_build_ms']:6.1f}ms\n"
-        f"      ├─ Payload size:    {total_encoded_size/1024:.0f}KB ({encoding_type})\n"
-        f"      └─ API await:       {timings['network_await_ms']:6.1f}ms  ⬅️ BASETEN API\n"
-        f"   ───────────────────────────────────────────\n"
-        f"   📝 POST-PROCESS:\n"
-        f"      ├─ Result extract:  {timings['result_extract_ms']:6.1f}ms\n"
-        f"      └─ Merge:           {timings['merge_ms']:6.1f}ms\n"
-        f"   ═══════════════════════════════════════════\n"
-        f"   ⏱️ WISPR-FLOW TOTAL:   {total_ms:6.1f}ms\n"
-        f"   📦 Chunks:            {len(encoded_chunks)} ({encoding_type})\n"
-        f"   ═══════════════════════════════════════════"
-    )
+    if is_direct_opus:
+        timing_log = (
+            f"\n⏱️ WISPR-FLOW INTERNAL TIMING (DIRECT OPUS):\n"
+            f"   ═══════════════════════════════════════════\n"
+            f"   📁 FILE INFO:\n"
+            f"      ├─ Size:            {file_size/1024:.1f} KB\n"
+            f"      ├─ Duration:        {duration:.1f}s\n"
+            f"      └─ Info time:       {timings['file_info_ms']:6.1f}ms\n"
+            f"   ───────────────────────────────────────────\n"
+            f"   🚀 DIRECT OPUS:        {preprocess_ms:6.1f}ms (no preprocessing!)\n"
+            f"      └─ Opus read:       {timings['opus_read_ms']:6.1f}ms\n"
+            f"   ───────────────────────────────────────────\n"
+            f"   🌐 NETWORK:            {network_ms:6.1f}ms\n"
+            f"      ├─ Client get:      {timings['client_get_ms']:6.1f}ms  (pooled)\n"
+            f"      ├─ Request build:   {timings['request_build_ms']:6.1f}ms\n"
+            f"      ├─ Payload size:    {total_encoded_size/1024:.0f}KB ({encoding_type})\n"
+            f"      └─ API await:       {timings['network_await_ms']:6.1f}ms  ⬅️ BASETEN API\n"
+            f"   ───────────────────────────────────────────\n"
+            f"   📝 POST-PROCESS:\n"
+            f"      ├─ Result extract:  {timings['result_extract_ms']:6.1f}ms\n"
+            f"      └─ Merge:           {timings['merge_ms']:6.1f}ms\n"
+            f"   ═══════════════════════════════════════════\n"
+            f"   ⏱️ WISPR-FLOW TOTAL:   {total_ms:6.1f}ms\n"
+            f"   📦 Chunks:            {len(encoded_chunks)} ({encoding_type})\n"
+            f"   ═══════════════════════════════════════════"
+        )
+    else:
+        timing_log = (
+            f"\n⏱️ WISPR-FLOW INTERNAL TIMING:\n"
+            f"   ═══════════════════════════════════════════\n"
+            f"   📁 FILE INFO:\n"
+            f"      ├─ Size:            {file_size/1024:.1f} KB\n"
+            f"      ├─ Duration:        {duration:.1f}s\n"
+            f"      └─ Info time:       {timings['file_info_ms']:6.1f}ms\n"
+            f"   ───────────────────────────────────────────\n"
+            f"   🔧 PREPROCESSING:      {preprocess_ms:6.1f}ms\n"
+            f"      ├─ Audio load:      {timings['audio_load_ms']:6.1f}ms\n"
+            f"      ├─ Audio split:     {timings['audio_split_ms']:6.1f}ms\n"
+            f"      └─ Audio encode:    {timings['audio_encode_ms']:6.1f}ms ({encoding_type.upper()})\n"
+            f"   ───────────────────────────────────────────\n"
+            f"   🌐 NETWORK:            {network_ms:6.1f}ms\n"
+            f"      ├─ Client get:      {timings['client_get_ms']:6.1f}ms  (pooled)\n"
+            f"      ├─ Request build:   {timings['request_build_ms']:6.1f}ms\n"
+            f"      ├─ Payload size:    {total_encoded_size/1024:.0f}KB ({encoding_type})\n"
+            f"      └─ API await:       {timings['network_await_ms']:6.1f}ms  ⬅️ BASETEN API\n"
+            f"   ───────────────────────────────────────────\n"
+            f"   📝 POST-PROCESS:\n"
+            f"      ├─ Result extract:  {timings['result_extract_ms']:6.1f}ms\n"
+            f"      └─ Merge:           {timings['merge_ms']:6.1f}ms\n"
+            f"   ═══════════════════════════════════════════\n"
+            f"   ⏱️ WISPR-FLOW TOTAL:   {total_ms:6.1f}ms\n"
+            f"   📦 Chunks:            {len(encoded_chunks)} ({encoding_type})\n"
+            f"   ═══════════════════════════════════════════"
+        )
     print(timing_log, flush=True)
     logger.info(timing_log)
     

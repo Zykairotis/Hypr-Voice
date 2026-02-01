@@ -1,101 +1,295 @@
-# 👥 User Documentation
+# Hypr-Voice User Documentation
 
-Comprehensive guides for using Hypr-Voice's features and capabilities.
+Welcome to the Hypr-Voice user documentation! This comprehensive guide will help you install, configure, and use all features of the Hypr-Voice system.
 
-## 📚 User Guides
+## What is Hypr-Voice?
 
-### 🎤 Core Features
-- **[Audio Configuration Guide](audio-configuration-guide.md)** - Microphone setup and audio settings
-- **[Enhanced Mode Guide](enhanced-mode-guide.md)** - Understanding Raw (F9) vs Enhanced (F10) modes
-- **[Web UI Guide](web-ui-guide.md)** - Using the web management interface
-- **[Universal Clipboard Guide](universal-clipboard-guide.md)** - Cross-application paste support
+Hypr-Voice is a powerful multi-agent voice orchestration system with Claude AI integration. It combines advanced speech recognition, intelligent AI agents, and text-to-speech to provide a natural voice interface for your computer.
 
-### 🔧 Feature Documentation
-- **[Audio Level Visualization](features/audio-level-visualization.md)** - Real-time audio feedback
-- **[Paste Fix](features/paste-fix.md)** - Universal paste support for all apps
-- **[Paste Troubleshooting](features/paste-troubleshooting.md)** - Solving paste-specific issues
+### Key Features
 
-### 📖 Detailed Guides
-- **[Setup Guide](guides/setup-guide.md)** - Comprehensive configuration reference
-- **[Quick Test Guide](guides/quick-test-guide.md)** - Testing system functionality
-- **[Complete Fix Guide](guides/complete-fix-guide.md)** - Comprehensive troubleshooting
+- **🎤 Voice Transcription** - State-of-the-art speech-to-text with Whisper
+- **🗣️ Text-to-Speech** - Natural voice synthesis with multiple providers
+- **🤖 Multi-Agent AI** - Specialized agents for different tasks
+- **🧠 Context Awareness** - Understands your active window and workspace
+- **🌐 Web Interface** - Beautiful, intuitive dashboard
+- **⌨️ CLI Tools** - Powerful command-line interface
+- **🔧 Push-to-Talk** - F10 keybinding for hands-free operation
 
-## 🎯 Key Concepts
+## Getting Started
 
-### 🎹 Mode Selection
-- **F9 (Raw Mode)**: Fast, instant transcription without AI processing
-- **F10 (Enhanced Mode)**: Smart, context-aware processing with corrections
-- **Super+F9**: Show raw mode status
-- **Super+F10**: Show enhanced mode status
+### New Users
 
-### 🔗 Application Support
-- **Terminals**: Auto-detection for Ctrl+Shift+V vs Ctrl+V
-- **Electron Apps**: Special handling for VS Code, Windsurf, Discord
-- **Web Browsers**: Optimized paste behavior and text improvement
-- **Code Editors**: Enhanced terminology correction for technical content
+If you're new to Hypr-Voice, follow this path:
 
-### 🎤 Audio Features
-- **Device Detection**: Automatic USB/Bluetooth microphone setup
-- **Level Monitoring**: Real-time audio visualization
-- **Quality Settings**: 48kHz recording optimized for Whisper
-- **Troubleshooting**: Common audio issues and solutions
+1. **[Installation Guide](./installation.md)** - Set up Hypr-Voice on your system
+2. **[Quick Start](./quickstart.md)** - Get up and running in 5 minutes
+3. **[Features Overview](./features.md)** - Learn what's possible
+4. **[Common Use Cases](./use-cases.md)** - See real-world examples
 
-## 🚀 Quick Reference
+### Quick Links
 
-### Daily Usage
+| Want to... | Go to... |
+|------------|----------|
+| Install Hypr-Voice | [Installation Guide](./installation.md) |
+| Start using the system | [Quick Start](./quickstart.md) |
+| Learn about features | [Features Overview](./features.md) |
+| Use the Web interface | [Web UI Guide](./web-ui-guide.md) |
+| Use command-line tools | [CLI Guide](./cli-guide.md) |
+| Find example workflows | [Use Cases](./use-cases.md) |
+| Fix a problem | [Troubleshooting](./troubleshooting.md) |
+
+## Documentation Structure
+
+### Installation & Setup
+- **[Installation Guide](./installation.md)** - Detailed setup instructions
+- **[Quick Start](./quickstart.md)** - Fast-track to first use
+
+### Feature Guides
+- **[Features Overview](./features.md)** - Complete feature documentation
+- **[Web UI Guide](./web-ui-guide.md)** - Dashboard usage
+- **[CLI Guide](./cli-guide.md)** - Command-line interface
+
+### Practical Guides
+- **[Use Cases](./use-cases.md)** - Real-world workflows and examples
+- **[Troubleshooting](./troubleshooting.md)** - Problem-solving guide
+
+## Quick Reference
+
+### Essential Commands
+
 ```bash
-# Start voice input
-# Hold SUPER+Grave, speak, release
+# Start all services
+./scripts/start_everything.sh start
 
-# Switch modes
-F9  - Raw mode (fast)
-F10 - Enhanced mode (smart)
+# Stop all services
+./scripts/start_everything.sh stop
 
 # Check status
-Super+F9  - Raw mode status
-Super+F10 - Enhanced mode status
+./scripts/start_everything.sh status
 
-# Web interface
-# Open http://localhost:8080
+# Voice recording
+./scripts/hypr-voice-record.sh
+
+# Test microphone
+./scripts/utils/test_mic.sh
 ```
 
-### Configuration
+### Web Interface
+
+Open your browser to: **http://localhost:8933**
+
+### Service Ports
+
+| Service | Port |
+|---------|------|
+| Hybrid Whisper | 9099 |
+| Wispr Flow | 9095 |
+| Context WebSocket | 9091 |
+| Orchestrator | 9093 |
+| Web UI Bridge | 8934 |
+| Web UI Frontend | 8933 |
+
+## System Requirements
+
+### Minimum
+- **OS**: Linux (Ubuntu 22.04+, Arch, or similar)
+- **Python**: 3.10+
+- **Node.js**: 18+
+- **RAM**: 8 GB
+- **Disk**: 10 GB free
+
+### Recommended
+- **OS**: Linux (Ubuntu 22.04+ or Arch)
+- **Python**: 3.11+
+- **Node.js**: 20+
+- **RAM**: 16 GB
+- **Disk**: 20 GB free
+- **Microphone**: For voice input
+
+## Core Concepts
+
+### Agents
+
+Hypr-Voice uses specialized AI agents for different tasks:
+
+- **Code Agent** - Programming and code analysis
+- **Research Agent** - Information gathering and documentation
+- **Shell Agent** - System operations and commands
+- **Voice Agent** - Natural conversation
+- **Enhanced Context Agent** - Context-aware assistance
+
+### Transcription Modes
+
+- **LOCAL Mode** - Uses local Whisper server (free, offline)
+- **FLOW Mode** - Uses Wispr Flow API (faster, requires internet)
+
+### Text-to-Speech Providers
+
+- **Deepgram** - Ultra-low latency (recommended)
+- **ElevenLabs** - Highest quality
+- **Kokoro-ONNX** - Local synthesis (no API costs)
+
+## Common Tasks
+
+### Record Voice Query
+
 ```bash
-# Audio settings
-# Web UI: Audio Configuration tab
-# Config: config/audio_config.yaml
+# Using script
+./scripts/hypr-voice-record.sh
 
-# Application profiles
-# Web UI: Applications tab
-# Config: config/app_profiles.yaml
-
-# Enhanced mode settings
-# Web UI: LLM Providers tab
-# Config: config/llm_providers.yaml
+# Using push-to-talk (F10)
+Press F10 → Speak → Press F10 again
 ```
 
-## 🔗 Related Documentation
+### Start Conversation
 
-- **[Installation](../installation/)** - Getting started setup
-- **[Technical](../technical/)** - System architecture and internals
-- **[Troubleshooting](../troubleshooting/)** - Common issues and solutions
+1. Open Web UI: http://localhost:8933
+2. Go to Agent Panel
+3. Type or speak your message
+4. AI responds with text and voice
 
-## 💡 Tips & Best Practices
+### Check System Status
 
-### 🎤 Audio Quality
-- Use a quality USB microphone for best results
+```bash
+./scripts/start_everything.sh status
+```
+
+### Test Microphone
+
+```bash
+./scripts/utils/test_mic.sh
+```
+
+## Getting Help
+
+### Self-Service
+
+- **[Troubleshooting Guide](./troubleshooting.md)** - Solutions to common issues
+- **[FAQ](./troubleshooting.md#faq)** - Frequently asked questions
+- **[Use Cases](./use-cases.md)** - Example workflows
+
+### Debug Information
+
+To get help effectively, collect this information:
+
+```bash
+# System info
+python3 --version
+node --version
+
+# Service status
+./scripts/start_everything.sh status
+
+# Recent logs
+tail -50 /tmp/hybrid-whisper-server.log
+tail -50 /tmp/hypr-voice-orchestrator.log
+```
+
+## Configuration
+
+### Environment Variables
+
+Main configuration is in `.env` file:
+
+```bash
+# Required
+CEREBRAS_API_KEY_ONE=your_key_here
+WISPR_FLOW_JWT_TOKEN=your_token_here
+WISPR_FLOW_BASETEN_API_KEY=your_key_here
+WISPR_FLOW_USER_UUID=your_uuid_here
+DEEPGRAM_API_KEY=your_key_here
+
+# Optional settings
+MODE=LOCAL  # or FLOW
+WISPR_FLOW_USE_OPUS=1
+FLOW_STREAMING_MODE=1
+```
+
+### Configuration Files
+
+- `config/hypr_voice/whisper/config.yaml` - Whisper settings
+- `config/hypr_voice/whisper/audio-profile.yaml` - Audio configuration
+- `config/hypr_voice/claude-sdk.yaml` - Claude SDK settings
+
+## Tips for Best Results
+
+### Voice Input
+
 - Speak clearly and at moderate pace
 - Minimize background noise
-- Test with different audio settings
+- Use quality microphone
+- Add technical terms to vocabulary
 
-### ⚡ Performance
-- Use Raw mode (F9) for speed-critical tasks
-- Use Enhanced mode (F10) for accuracy-critical work
-- Close unused applications when using Enhanced mode
-- Monitor audio levels for optimal input
+### AI Queries
 
-### 🔗 Application Compatibility
-- Check the application profiles for your favorite apps
-- Create custom profiles for unsupported applications
-- Use the universal clipboard for problematic apps
-- Test different paste methods for best results
+- Be specific about what you want
+- Provide context when needed
+- Use appropriate agent for task
+- Break complex tasks into steps
+
+### Performance
+
+- Enable Opus compression
+- Use streaming mode for long recordings
+- Increase chunk size for faster processing
+- Check network speed for cloud APIs
+
+## Security Notes
+
+### API Keys
+
+- Never commit `.env` file to version control
+- Rotate keys regularly
+- Use separate keys for dev/prod
+- Monitor usage and quotas
+
+### Data Privacy
+
+- **LOCAL mode**: Audio stays on your computer
+- **FLOW mode**: Audio sent to cloud API
+- Check provider privacy policies
+- Review what data is sent
+
+## Next Steps
+
+1. **Install** - Follow the [Installation Guide](./installation.md)
+2. **Start** - Use the [Quick Start](./quickstart.md)
+3. **Explore** - Read the [Features Overview](./features.md)
+4. **Practice** - Try [Use Cases](./use-cases.md)
+5. **Customize** - Adjust settings to your needs
+
+## Additional Resources
+
+### For Developers
+- [API Documentation](../api/)
+- [Development Guide](../development/)
+- [Contributing Guidelines](../CONTRIBUTING.md)
+
+### For Operators
+- [Operations Guide](../operations/)
+- [Deployment Guide](../operations/deployment.md)
+- [Monitoring Guide](../operations/monitoring.md)
+
+### Community
+- Report Issues: [GitHub Issues](https://github.com/your-repo/issues)
+- Discussions: [GitHub Discussions](https://github.com/your-repo/discussions)
+- Updates: Follow the project repository
+
+## Version Information
+
+- **Current Version**: 0.2.0
+- **Python**: 3.10+
+- **Node.js**: 18+
+
+## License
+
+Proprietary - All rights reserved
+
+---
+
+**Need help?** Start with the [Troubleshooting Guide](./troubleshooting.md)
+
+**Ready to begin?** Jump to the [Installation Guide](./installation.md)
+
+**Want to learn more?** Check out the [Features Overview](./features.md)
